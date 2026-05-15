@@ -24,7 +24,12 @@ from collections.abc import Callable, Sequence
 from typing import Any, TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from zeeref.session import StatusInfoMessage
+    from zeeref.session import (
+        ItemMessage,
+        ItemsMessage,
+        StatusInfoMessage,
+        ViewInfoMessage,
+    )
 
 from zeeref.logging import getLogger
 
@@ -862,6 +867,60 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
             loaded_file=str(self.filename) if self.filename else None,
             item_count=len(self.scene.user_items()),
             dirty=not self.undo_stack.isClean(),
+        )
+
+    def get_session_items(self) -> ItemsMessage:
+        """Return all user items as snapshot dicts for the IPC server.
+
+        ``save_id`` is exposed as ``id`` on the wire to match the .zref
+        ``items`` table schema and the public CLI surface.
+        """
+        import dataclasses as _dc
+
+        from zeeref.session import ItemsMessage as _ItemsMessage
+
+        def _to_wire(it: Any) -> dict:
+            d = _dc.asdict(it.snapshot())
+            d["id"] = d.pop("save_id")
+            return d
+
+        return _ItemsMessage(
+            items=tuple(_to_wire(it) for it in self.scene.user_items())
+        )
+
+    def get_session_item(self, item_id: str) -> ItemMessage:
+        """Return a single item snapshot dict by id, or null."""
+        import dataclasses as _dc
+
+        from zeeref.session import ItemMessage as _ItemMessage
+
+        for it in self.scene.user_items():
+            if it.save_id == item_id:
+                d = _dc.asdict(it.snapshot())
+                d["id"] = d.pop("save_id")
+                return _ItemMessage(item=d)
+        return _ItemMessage(item=None)
+
+    def get_session_view(self) -> ViewInfoMessage:
+        """Return viewport state for the IPC server."""
+        from zeeref.session import ViewInfoMessage as _ViewInfoMessage
+
+        center_scene = self.mapToScene(self.get_view_center())
+        transform = self.transform()
+        # Uniform scale on m11; m22 is the same.
+        zoom = transform.m11()
+        win = self.window()
+        geom = win.geometry() if win is not None else self.geometry()
+        return _ViewInfoMessage(
+            center_x=center_scene.x(),
+            center_y=center_scene.y(),
+            zoom=zoom,
+            window={
+                "x": geom.x(),
+                "y": geom.y(),
+                "width": geom.width(),
+                "height": geom.height(),
+            },
         )
 
     def on_action_insert_images(self) -> None:

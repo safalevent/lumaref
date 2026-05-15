@@ -9,6 +9,10 @@ from PyQt6 import QtNetwork
 from zeeref.session import (
     AddMessage,
     ErrorMessage,
+    GetRequestMessage,
+    ItemMessage,
+    ItemsMessage,
+    ListRequestMessage,
     NewMessage,
     OpenMessage,
     PingMessage,
@@ -16,6 +20,8 @@ from zeeref.session import (
     SessionServer,
     StatusInfoMessage,
     StatusRequestMessage,
+    ViewInfoMessage,
+    ViewRequestMessage,
     parse_message,
     server_name,
 )
@@ -63,8 +69,31 @@ def mock_status_fn():
 
 
 @pytest.fixture
+def mock_list_fn():
+    return MagicMock(return_value=ItemsMessage(items=()))
+
+
+@pytest.fixture
+def mock_get_fn():
+    return MagicMock(return_value=ItemMessage(item=None))
+
+
+@pytest.fixture
+def mock_view_fn():
+    return MagicMock(return_value=ViewInfoMessage())
+
+
+@pytest.fixture
 def server(
-    qtbot, session_name, mock_insert_fn, mock_new_fn, mock_open_fn, mock_status_fn
+    qtbot,
+    session_name,
+    mock_insert_fn,
+    mock_new_fn,
+    mock_open_fn,
+    mock_status_fn,
+    mock_list_fn,
+    mock_get_fn,
+    mock_view_fn,
 ):
     srv = SessionServer(
         session_name,
@@ -72,6 +101,9 @@ def server(
         mock_new_fn,
         mock_open_fn,
         mock_status_fn,
+        mock_list_fn,
+        mock_get_fn,
+        mock_view_fn,
     )
     assert srv.start()
     yield srv
@@ -115,7 +147,7 @@ class AsyncClient:
         while b"\n" not in buf:
             if not sock.waitForReadyRead(5000):
                 break
-            buf += bytes(sock.readAll())
+            buf += sock.readAll().data()
         line, _, _ = buf.partition(b"\n")
         return line
 
@@ -207,13 +239,16 @@ def test_server_accepts_connections(server, session_name):
 
 
 def _make_server(session_name, insert_fn):
-    """Construct a SessionServer with no-op new/open/status mocks."""
+    """Construct a SessionServer with no-op stubs for everything but insert."""
     return SessionServer(
         session_name,
         insert_fn,
         _mock_async_fn(),
         _mock_async_fn(),
         MagicMock(return_value=StatusInfoMessage()),
+        MagicMock(return_value=ItemsMessage(items=())),
+        MagicMock(return_value=ItemMessage(item=None)),
+        MagicMock(return_value=ViewInfoMessage()),
     )
 
 
@@ -433,6 +468,9 @@ def test_new_reports_errors_from_callback(qtbot, session_name):
         new_fn,
         _mock_async_fn(),
         MagicMock(return_value=StatusInfoMessage()),
+        MagicMock(return_value=ItemsMessage(items=())),
+        MagicMock(return_value=ItemMessage(item=None)),
+        MagicMock(return_value=ViewInfoMessage()),
     )
     assert srv.start()
     try:
@@ -471,6 +509,9 @@ def test_open_reports_errors_from_callback(qtbot, session_name):
         _mock_async_fn(),
         open_fn,
         MagicMock(return_value=StatusInfoMessage()),
+        MagicMock(return_value=ItemsMessage(items=())),
+        MagicMock(return_value=ItemMessage(item=None)),
+        MagicMock(return_value=ViewInfoMessage()),
     )
     assert srv.start()
     try:
@@ -505,6 +546,9 @@ def test_writes_serialize_through_queue(qtbot, session_name, imgfile):
         MagicMock(side_effect=slow_new),
         MagicMock(side_effect=slow_open),
         MagicMock(return_value=StatusInfoMessage()),
+        MagicMock(return_value=ItemsMessage(items=())),
+        MagicMock(return_value=ItemMessage(item=None)),
+        MagicMock(return_value=ViewInfoMessage()),
     )
     assert srv.start()
     try:
@@ -532,5 +576,122 @@ def test_writes_serialize_through_queue(qtbot, session_name, imgfile):
         assert c1.reply["type"] == "ok"
         assert c2.reply["type"] == "ok"
         assert c3.reply["type"] == "ok"
+    finally:
+        srv.shutdown()
+
+
+# -- parse_message: list/get/view -------------------------------------------
+
+
+def test_parse_list_request():
+    result = parse_message('{"type": "list"}')
+    assert isinstance(result, ListRequestMessage)
+
+
+def test_parse_get_request():
+    result = parse_message('{"type": "get", "id": "abc123"}')
+    assert isinstance(result, GetRequestMessage)
+    assert result.id == "abc123"
+
+
+def test_parse_get_missing_id():
+    result = parse_message('{"type": "get"}')
+    assert isinstance(result, ErrorMessage)
+
+
+def test_parse_get_empty_id():
+    result = parse_message('{"type": "get", "id": ""}')
+    assert isinstance(result, ErrorMessage)
+
+
+def test_parse_view_request():
+    result = parse_message('{"type": "view"}')
+    assert isinstance(result, ViewRequestMessage)
+
+
+# -- Integration: list/get/view --------------------------------------------
+
+
+def test_list_returns_items(qtbot, server, session_name, mock_list_fn):
+    mock_list_fn.return_value = ItemsMessage(
+        items=(
+            {"id": "a", "type": "pixmap", "x": 0.0, "y": 0.0},
+            {"id": "b", "type": "text", "x": 100.0, "y": 50.0},
+        )
+    )
+    c = AsyncClient(session_name, make_msg({"type": "list"}))
+    qtbot.waitUntil(lambda: c.done, timeout=3000)
+    assert c.reply["type"] == "items"
+    assert len(c.reply["items"]) == 2
+    assert c.reply["items"][0]["id"] == "a"
+    mock_list_fn.assert_called_once()
+
+
+def test_get_returns_item(qtbot, server, session_name, mock_get_fn):
+    mock_get_fn.return_value = ItemMessage(
+        item={"id": "xyz", "type": "pixmap", "x": 12.0, "y": 34.0}
+    )
+    c = AsyncClient(session_name, make_msg({"type": "get", "id": "xyz"}))
+    qtbot.waitUntil(lambda: c.done, timeout=3000)
+    assert c.reply["type"] == "item"
+    assert c.reply["item"]["id"] == "xyz"
+    mock_get_fn.assert_called_once_with("xyz")
+
+
+def test_get_unknown_id_returns_null(qtbot, server, session_name, mock_get_fn):
+    mock_get_fn.return_value = ItemMessage(item=None)
+    c = AsyncClient(session_name, make_msg({"type": "get", "id": "missing"}))
+    qtbot.waitUntil(lambda: c.done, timeout=3000)
+    assert c.reply["type"] == "item"
+    assert c.reply["item"] is None
+
+
+def test_view_returns_viewport_state(qtbot, server, session_name, mock_view_fn):
+    mock_view_fn.return_value = ViewInfoMessage(
+        center_x=10.5,
+        center_y=-20.0,
+        zoom=1.5,
+        window={"x": 0, "y": 0, "width": 800, "height": 600},
+    )
+    c = AsyncClient(session_name, make_msg({"type": "view"}))
+    qtbot.waitUntil(lambda: c.done, timeout=3000)
+    assert c.reply["type"] == "view_info"
+    assert c.reply["center_x"] == 10.5
+    assert c.reply["zoom"] == 1.5
+    assert c.reply["window"]["width"] == 800
+    mock_view_fn.assert_called_once()
+
+
+def test_reads_bypass_mutation_queue(qtbot, session_name, imgfile):
+    """list/get/view return immediately even while add is in flight."""
+    add_callbacks: list = []
+
+    def slow_add(inserts, on_done):
+        add_callbacks.append(on_done)
+
+    srv = SessionServer(
+        session_name,
+        MagicMock(side_effect=slow_add),
+        _mock_async_fn(),
+        _mock_async_fn(),
+        MagicMock(return_value=StatusInfoMessage()),
+        MagicMock(return_value=ItemsMessage(items=())),
+        MagicMock(return_value=ItemMessage(item=None)),
+        MagicMock(return_value=ViewInfoMessage()),
+    )
+    assert srv.start()
+    try:
+        c_add = AsyncClient(session_name, add_msg([{"path": str(imgfile)}]))
+        qtbot.waitUntil(lambda: len(add_callbacks) == 1, timeout=3000)
+
+        # Reads should fire and reply while the add is still pending.
+        c_list = AsyncClient(session_name, make_msg({"type": "list"}))
+        qtbot.waitUntil(lambda: c_list.done, timeout=3000)
+        assert c_list.reply["type"] == "items"
+
+        # Drain the add.
+        add_callbacks[0]([])
+        qtbot.waitUntil(lambda: c_add.done, timeout=3000)
+        assert c_add.reply["type"] == "ok"
     finally:
         srv.shutdown()

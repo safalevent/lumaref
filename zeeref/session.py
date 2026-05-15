@@ -48,6 +48,16 @@ it before sending::
     Server: {"type": "status_info", "loaded_file": "..." | null,
              "item_count": N, "dirty": bool}
 
+    Client: {"type": "list"}
+    Server: {"type": "items", "items": [{id, type, x, y, ...}, ...]}
+
+    Client: {"type": "get", "id": "..."}
+    Server: {"type": "item", "item": {id, type, ...} | null}
+
+    Client: {"type": "view"}
+    Server: {"type": "view_info", "center_x": ..., "center_y": ...,
+             "zoom": ..., "window": {x, y, width, height}}
+
 Bump ``PROTOCOL_VERSION`` on any wire-incompatible change.
 """
 
@@ -72,7 +82,7 @@ from zeeref.fileio.io import ImageInsert
 logger = logging.getLogger(__name__)
 
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 
 
 # -- Messages --------------------------------------------------------------
@@ -125,6 +135,28 @@ class StatusRequestMessage(ClientMessage):
 
 
 @dataclasses.dataclass(frozen=True)
+class ListRequestMessage(ClientMessage):
+    """Request the full list of scene items."""
+
+    type: str = "list"
+
+
+@dataclasses.dataclass(frozen=True)
+class GetRequestMessage(ClientMessage):
+    """Request a single scene item by id."""
+
+    type: str = "get"
+    id: str = ""
+
+
+@dataclasses.dataclass(frozen=True)
+class ViewRequestMessage(ClientMessage):
+    """Request viewport state."""
+
+    type: str = "view"
+
+
+@dataclasses.dataclass(frozen=True)
 class ServerMessage:
     """Base class for messages sent by the server."""
 
@@ -163,6 +195,29 @@ class StatusInfoMessage(ServerMessage):
     loaded_file: str | None = None
     item_count: int = 0
     dirty: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
+class ItemsMessage(ServerMessage):
+    type: str = "items"
+    items: tuple[dict, ...] = ()
+
+
+@dataclasses.dataclass(frozen=True)
+class ItemMessage(ServerMessage):
+    """Reply to ``get``. ``item`` is ``None`` when the id is unknown."""
+
+    type: str = "item"
+    item: dict | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class ViewInfoMessage(ServerMessage):
+    type: str = "view_info"
+    center_x: float = 0.0
+    center_y: float = 0.0
+    zoom: float = 1.0
+    window: dict | None = None
 
 
 # -- Parsing ----------------------------------------------------------------
@@ -231,6 +286,18 @@ def parse_message(line: str) -> ClientMessage | ErrorMessage:
     if msg_type == "status":
         return StatusRequestMessage()
 
+    if msg_type == "list":
+        return ListRequestMessage()
+
+    if msg_type == "view":
+        return ViewRequestMessage()
+
+    if msg_type == "get":
+        item_id = msg.get("id")
+        if not isinstance(item_id, str) or not item_id:
+            return ErrorMessage(message="'get' requires 'id' string")
+        return GetRequestMessage(id=item_id)
+
     if msg_type == "new":
         force = msg.get("force", False)
         if not isinstance(force, bool):
@@ -285,6 +352,9 @@ class SessionServer(QtCore.QObject):
         new_fn: Callable[[bool, Callable[[list[str]], None]], None],
         open_fn: Callable[[Path, bool, Callable[[list[str]], None]], None],
         status_fn: Callable[[], StatusInfoMessage],
+        list_fn: Callable[[], ItemsMessage],
+        get_fn: Callable[[str], ItemMessage],
+        view_fn: Callable[[], ViewInfoMessage],
         parent: QtCore.QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -293,6 +363,9 @@ class SessionServer(QtCore.QObject):
         self._new_fn = new_fn
         self._open_fn = open_fn
         self._status_fn = status_fn
+        self._list_fn = list_fn
+        self._get_fn = get_fn
+        self._view_fn = view_fn
         self._server = QtNetwork.QLocalServer(self)
         self._server.newConnection.connect(self._on_new_connection)
         self._connections: list[_SessionConnection] = []
@@ -343,6 +416,15 @@ class SessionServer(QtCore.QObject):
         """
         if isinstance(msg, StatusRequestMessage):
             conn.reply(self._status_fn())
+            return
+        if isinstance(msg, ListRequestMessage):
+            conn.reply(self._list_fn())
+            return
+        if isinstance(msg, GetRequestMessage):
+            conn.reply(self._get_fn(msg.id))
+            return
+        if isinstance(msg, ViewRequestMessage):
+            conn.reply(self._view_fn())
             return
         if isinstance(msg, (AddMessage, NewMessage, OpenMessage)):
             self._queue.append((msg, conn))

@@ -213,6 +213,9 @@ def main():
             new_fn=bee.view.do_new_scene_with_callback,
             open_fn=bee.view.do_open_with_callback,
             status_fn=bee.view.get_session_status,
+            list_fn=bee.view.get_session_items,
+            get_fn=bee.view.get_session_item,
+            view_fn=bee.view.get_session_view,
         )
         if not session_server.start():
             print(

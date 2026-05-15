@@ -368,6 +368,45 @@ def _cmd_status(args: argparse.Namespace) -> None:
         sock.disconnectFromServer()
 
 
+def _cmd_list(args: argparse.Namespace) -> None:
+    sock = _connect_or_die(args.session)
+    try:
+        reply = _request(sock, {"type": "list"})
+        _exit_on_error_reply(reply)
+        _emit(
+            {
+                "ok": True,
+                "session": args.session,
+                "items": reply.get("items", []),
+            }
+        )
+    finally:
+        sock.disconnectFromServer()
+
+
+def _cmd_get(args: argparse.Namespace) -> None:
+    sock = _connect_or_die(args.session)
+    try:
+        reply = _request(sock, {"type": "get", "id": args.id})
+        _exit_on_error_reply(reply)
+        item = reply.get("item")
+        if item is None:
+            sys.exit(f"Error: no item with id '{args.id}'")
+        _emit({"ok": True, "session": args.session, "item": item})
+    finally:
+        sock.disconnectFromServer()
+
+
+def _cmd_view(args: argparse.Namespace) -> None:
+    sock = _connect_or_die(args.session)
+    try:
+        reply = _request(sock, {"type": "view"})
+        _exit_on_error_reply(reply)
+        _emit({"ok": True, "session": args.session, "view": reply})
+    finally:
+        sock.disconnectFromServer()
+
+
 def _cmd_sessions(args: argparse.Namespace) -> None:
     sessions = _scan_sessions()
     _emit({"ok": True, "sessions": sessions})
@@ -475,6 +514,22 @@ def main() -> None:
     # sessions
     sessions_p = sub.add_parser("sessions", help="List running sessions (no spawn)")
     sessions_p.set_defaults(func=_cmd_sessions)
+
+    # list
+    list_p = sub.add_parser("list", help="List all scene items (no spawn)")
+    list_p.add_argument("session", help="Session name")
+    list_p.set_defaults(func=_cmd_list)
+
+    # get
+    get_p = sub.add_parser("get", help="Get one item by id (no spawn)")
+    get_p.add_argument("session", help="Session name")
+    get_p.add_argument("id", help="Item id (save_id)")
+    get_p.set_defaults(func=_cmd_get)
+
+    # view
+    view_p = sub.add_parser("view", help="Viewport state (no spawn)")
+    view_p.add_argument("session", help="Session name")
+    view_p.set_defaults(func=_cmd_view)
 
     args = parser.parse_args()
     args.func(args)
