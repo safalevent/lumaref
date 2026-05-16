@@ -814,6 +814,47 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
             dialog=DialogOptions(label="Loading images (session)"),
         )
 
+    def do_insert_text_with_callback(
+        self,
+        inserts: list[fileio.TextInsert],
+        on_done: Callable[[list[str]], None],
+    ) -> None:
+        """Insert markdown text items synchronously and call *on_done*.
+
+        Items default to the view center; supplied ``x``/``y`` are scene
+        coordinates of the item's local top-left (unscaled).
+        """
+        center_pos = self.mapToScene(self.get_view_center())
+        self.scene.deselect_all_items()
+        items: list[ZeeTextItem] = []
+        for ins in inserts:
+            item = ZeeTextItem(ins.text)
+            scale = ins.scale if ins.scale is not None else 1.0
+            item.setScale(scale)
+            if ins.rotation is not None:
+                item.setRotation(ins.rotation)
+            if ins.z is not None:
+                item.setZValue(ins.z)
+            if ins.flip is not None and ins.flip != item.flip():
+                item.do_flip()
+            if ins.opacity is not None:
+                item.setOpacity(ins.opacity)
+            if ins.x is not None and ins.y is not None:
+                item.setPos(ins.x, ins.y)
+            else:
+                br = item.boundingRect()
+                w = br.width() * scale
+                h = br.height() * scale
+                tx = ins.x if ins.x is not None else center_pos.x() - w / 2
+                ty = ins.y if ins.y is not None else center_pos.y() - h / 2
+                item.setPos(tx, ty)
+            items.append(item)
+        if items:
+            self.undo_stack.push(commands.InsertItems(self.scene, items))
+            for it in items:
+                it.setSelected(True)
+        on_done([])
+
     def do_new_scene_with_callback(
         self,
         force: bool,

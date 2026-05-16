@@ -16,6 +16,7 @@
 from zeeref.fileio.errors import ZeeFileIOError
 from zeeref.fileio.io import (
     ImageInsert,
+    TextInsert,
     drain_zref,
     insert_image_files,
     insert_image_from_clipboard,
@@ -36,6 +37,7 @@ from zeeref.fileio.thread import ThreadedIO
 __all__ = [
     "ZeeFileIOError",
     "ImageInsert",
+    "TextInsert",
     "IOResult",
     "LoadResult",
     "SaveResult",

@@ -35,7 +35,12 @@ it before sending::
     Client: {"type": "ping"}
     Server: {"type": "pong"}
 
-    Client: {"type": "add", "payload": [{"path": "...", ...}]}
+    Client: {"type": "add", "payload": [{"path": "...", x?, y?, scale?,
+             rotation?, z?, flip?, opacity?, title?, caption?}, ...]}
+    Server: {"type": "ok"} | {"type": "error", "message": "..."}
+
+    Client: {"type": "add_text", "payload": [{"text": "...", x?, y?, scale?,
+             rotation?, z?, flip?, opacity?}, ...]}
     Server: {"type": "ok"} | {"type": "error", "message": "..."}
 
     Client: {"type": "new", "force": false}
@@ -77,12 +82,12 @@ from typing import cast
 from PyQt6 import QtCore, QtNetwork
 
 from zeeref import constants
-from zeeref.fileio.io import ImageInsert
+from zeeref.fileio.io import ImageInsert, TextInsert
 
 logger = logging.getLogger(__name__)
 
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 
 
 # -- Messages --------------------------------------------------------------
@@ -101,6 +106,14 @@ class AddMessage(ClientMessage):
 
     type: str = "add"
     images: tuple[ImageInsert, ...] = ()
+
+
+@dataclasses.dataclass(frozen=True)
+class AddTextMessage(ClientMessage):
+    """Request to insert text items into the scene."""
+
+    type: str = "add_text"
+    texts: tuple[TextInsert, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -237,6 +250,19 @@ def server_name(session_name: str) -> str:
     return os.path.join(runtime, f"zeeref-{session_name}")
 
 
+def _coerce_number(
+    val: object, field: str, index: int, kind: type
+) -> tuple[float | int | None, str | None]:
+    """Coerce an optional JSON number to *kind*. Returns (value, error)."""
+    if val is None:
+        return None, None
+    if isinstance(val, bool):  # bool is a subclass of int; reject
+        return None, f"item {index}: '{field}' must be a number"
+    if not isinstance(val, (int, float)):
+        return None, f"item {index}: '{field}' must be a number"
+    return kind(val), None
+
+
 def _parse_insert_entry(raw: object, index: int) -> ImageInsert | str:
     """Parse a single JSON object into an ImageInsert.
 
@@ -255,11 +281,114 @@ def _parse_insert_entry(raw: object, index: int) -> ImageInsert | str:
     caption = d.get("caption")
     if caption is not None and not isinstance(caption, str):
         return f"item {index}: 'caption' must be a string"
+
+    def _f(name: str) -> tuple[float | None, str | None]:
+        val, err = _coerce_number(d.get(name), name, index, float)
+        return (val if val is None else float(val), err)
+
+    def _i(name: str) -> tuple[int | None, str | None]:
+        val, err = _coerce_number(d.get(name), name, index, int)
+        return (val if val is None else int(val), err)
+
+    x_v, err = _f("x")
+    if err:
+        return err
+    y_v, err = _f("y")
+    if err:
+        return err
+    scale_v, err = _f("scale")
+    if err:
+        return err
+    rotation_v, err = _f("rotation")
+    if err:
+        return err
+    z_v, err = _f("z")
+    if err:
+        return err
+    flip_v, err = _i("flip")
+    if err:
+        return err
+    opacity_v, err = _f("opacity")
+    if err:
+        return err
+
+    if flip_v is not None and flip_v not in (-1, 1):
+        return f"item {index}: 'flip' must be 1 or -1"
+    if opacity_v is not None and not (0.0 <= opacity_v <= 1.0):
+        return f"item {index}: 'opacity' must be in [0.0, 1.0]"
+
     resolved = Path(path).resolve()
     if not resolved.is_file():
         logger.warning("Session: skipping non-existent path: %s", path)
         return f"item {index}: file not found: {path}"
-    return ImageInsert(path=str(resolved), title=title, caption=caption)
+    return ImageInsert(
+        path=str(resolved),
+        title=title,
+        caption=caption,
+        x=x_v,
+        y=y_v,
+        scale=scale_v,
+        rotation=rotation_v,
+        z=z_v,
+        flip=flip_v,
+        opacity=opacity_v,
+    )
+
+
+def _parse_text_entry(raw: object, index: int) -> TextInsert | str:
+    """Parse a single JSON object into a TextInsert."""
+    if not isinstance(raw, dict):
+        return f"item {index}: expected object, got {type(raw).__name__}"
+    d = cast(dict[str, object], raw)
+    text = d.get("text")
+    if not isinstance(text, str):
+        return f"item {index}: missing or invalid 'text'"
+
+    def _f(name: str) -> tuple[float | None, str | None]:
+        val, err = _coerce_number(d.get(name), name, index, float)
+        return (val if val is None else float(val), err)
+
+    def _i(name: str) -> tuple[int | None, str | None]:
+        val, err = _coerce_number(d.get(name), name, index, int)
+        return (val if val is None else int(val), err)
+
+    x_v, err = _f("x")
+    if err:
+        return err
+    y_v, err = _f("y")
+    if err:
+        return err
+    scale_v, err = _f("scale")
+    if err:
+        return err
+    rotation_v, err = _f("rotation")
+    if err:
+        return err
+    z_v, err = _f("z")
+    if err:
+        return err
+    flip_v, err = _i("flip")
+    if err:
+        return err
+    opacity_v, err = _f("opacity")
+    if err:
+        return err
+
+    if flip_v is not None and flip_v not in (-1, 1):
+        return f"item {index}: 'flip' must be 1 or -1"
+    if opacity_v is not None and not (0.0 <= opacity_v <= 1.0):
+        return f"item {index}: 'opacity' must be in [0.0, 1.0]"
+
+    return TextInsert(
+        text=text,
+        x=x_v,
+        y=y_v,
+        scale=scale_v,
+        rotation=rotation_v,
+        z=z_v,
+        flip=flip_v,
+        opacity=opacity_v,
+    )
 
 
 def parse_message(line: str) -> ClientMessage | ErrorMessage:
@@ -331,6 +460,18 @@ def parse_message(line: str) -> ClientMessage | ErrorMessage:
             return ErrorMessage(message="no valid files")
         return AddMessage(images=tuple(images))
 
+    if msg_type == "add_text":
+        payload = msg.get("payload")
+        if not isinstance(payload, list) or not payload:
+            return ErrorMessage(message="'add_text' requires non-empty 'payload' array")
+        texts: list[TextInsert] = []
+        for i, entry in enumerate(payload):
+            parsed = _parse_text_entry(entry, i)
+            if isinstance(parsed, str):
+                return ErrorMessage(message=parsed)
+            texts.append(parsed)
+        return AddTextMessage(texts=tuple(texts))
+
     return ErrorMessage(message=f"unknown type: {msg_type}")
 
 
@@ -355,6 +496,7 @@ class SessionServer(QtCore.QObject):
         list_fn: Callable[[], ItemsMessage],
         get_fn: Callable[[str], ItemMessage],
         view_fn: Callable[[], ViewInfoMessage],
+        insert_text_fn: Callable[[list[TextInsert], Callable[[list[str]], None]], None],
         parent: QtCore.QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -366,6 +508,7 @@ class SessionServer(QtCore.QObject):
         self._list_fn = list_fn
         self._get_fn = get_fn
         self._view_fn = view_fn
+        self._insert_text_fn = insert_text_fn
         self._server = QtNetwork.QLocalServer(self)
         self._server.newConnection.connect(self._on_new_connection)
         self._connections: list[_SessionConnection] = []
@@ -426,7 +569,7 @@ class SessionServer(QtCore.QObject):
         if isinstance(msg, ViewRequestMessage):
             conn.reply(self._view_fn())
             return
-        if isinstance(msg, (AddMessage, NewMessage, OpenMessage)):
+        if isinstance(msg, (AddMessage, AddTextMessage, NewMessage, OpenMessage)):
             self._queue.append((msg, conn))
             self._process_queue()
             return
@@ -441,6 +584,9 @@ class SessionServer(QtCore.QObject):
         if isinstance(msg, AddMessage):
             logger.info("Session: inserting %d image(s)", len(msg.images))
             self._insert_fn(list(msg.images), self._on_op_finished)
+        elif isinstance(msg, AddTextMessage):
+            logger.info("Session: inserting %d text item(s)", len(msg.texts))
+            self._insert_text_fn(list(msg.texts), self._on_op_finished)
         elif isinstance(msg, NewMessage):
             logger.info("Session: new scene (force=%s)", msg.force)
             self._new_fn(msg.force, self._on_op_finished)

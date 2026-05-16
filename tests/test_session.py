@@ -8,6 +8,7 @@ from PyQt6 import QtNetwork
 
 from zeeref.session import (
     AddMessage,
+    AddTextMessage,
     ErrorMessage,
     GetRequestMessage,
     ItemMessage,
@@ -84,6 +85,11 @@ def mock_view_fn():
 
 
 @pytest.fixture
+def mock_insert_text_fn():
+    return _mock_async_fn()
+
+
+@pytest.fixture
 def server(
     qtbot,
     session_name,
@@ -94,6 +100,7 @@ def server(
     mock_list_fn,
     mock_get_fn,
     mock_view_fn,
+    mock_insert_text_fn,
 ):
     srv = SessionServer(
         session_name,
@@ -104,6 +111,7 @@ def server(
         mock_list_fn,
         mock_get_fn,
         mock_view_fn,
+        mock_insert_text_fn,
     )
     assert srv.start()
     yield srv
@@ -249,6 +257,7 @@ def _make_server(session_name, insert_fn):
         MagicMock(return_value=ItemsMessage(items=())),
         MagicMock(return_value=ItemMessage(item=None)),
         MagicMock(return_value=ViewInfoMessage()),
+        _mock_async_fn(),
     )
 
 
@@ -471,6 +480,7 @@ def test_new_reports_errors_from_callback(qtbot, session_name):
         MagicMock(return_value=ItemsMessage(items=())),
         MagicMock(return_value=ItemMessage(item=None)),
         MagicMock(return_value=ViewInfoMessage()),
+        _mock_async_fn(),
     )
     assert srv.start()
     try:
@@ -512,6 +522,7 @@ def test_open_reports_errors_from_callback(qtbot, session_name):
         MagicMock(return_value=ItemsMessage(items=())),
         MagicMock(return_value=ItemMessage(item=None)),
         MagicMock(return_value=ViewInfoMessage()),
+        _mock_async_fn(),
     )
     assert srv.start()
     try:
@@ -549,6 +560,7 @@ def test_writes_serialize_through_queue(qtbot, session_name, imgfile):
         MagicMock(return_value=ItemsMessage(items=())),
         MagicMock(return_value=ItemMessage(item=None)),
         MagicMock(return_value=ViewInfoMessage()),
+        _mock_async_fn(),
     )
     assert srv.start()
     try:
@@ -678,6 +690,7 @@ def test_reads_bypass_mutation_queue(qtbot, session_name, imgfile):
         MagicMock(return_value=ItemsMessage(items=())),
         MagicMock(return_value=ItemMessage(item=None)),
         MagicMock(return_value=ViewInfoMessage()),
+        _mock_async_fn(),
     )
     assert srv.start()
     try:
@@ -693,5 +706,198 @@ def test_reads_bypass_mutation_queue(qtbot, session_name, imgfile):
         add_callbacks[0]([])
         qtbot.waitUntil(lambda: c_add.done, timeout=3000)
         assert c_add.reply["type"] == "ok"
+    finally:
+        srv.shutdown()
+
+
+# -- parse_message: add transform fields ------------------------------------
+
+
+def test_parse_add_accepts_transform_fields(imgfile):
+    result = parse_message(
+        json.dumps(
+            {
+                "type": "add",
+                "payload": [
+                    {
+                        "path": str(imgfile),
+                        "x": 10.5,
+                        "y": -3.0,
+                        "scale": 2.0,
+                        "rotation": 45.0,
+                        "z": 1.5,
+                        "flip": -1,
+                        "opacity": 0.5,
+                    }
+                ],
+            }
+        )
+    )
+    assert isinstance(result, AddMessage)
+    img = result.images[0]
+    assert img.x == 10.5
+    assert img.y == -3.0
+    assert img.scale == 2.0
+    assert img.rotation == 45.0
+    assert img.z == 1.5
+    assert img.flip == -1
+    assert img.opacity == 0.5
+
+
+def test_parse_add_rejects_non_number_x(imgfile):
+    result = parse_message(
+        json.dumps({"type": "add", "payload": [{"path": str(imgfile), "x": "10"}]})
+    )
+    assert isinstance(result, ErrorMessage)
+
+
+def test_parse_add_rejects_invalid_flip(imgfile):
+    result = parse_message(
+        json.dumps({"type": "add", "payload": [{"path": str(imgfile), "flip": 0}]})
+    )
+    assert isinstance(result, ErrorMessage)
+
+
+def test_parse_add_rejects_out_of_range_opacity(imgfile):
+    result = parse_message(
+        json.dumps({"type": "add", "payload": [{"path": str(imgfile), "opacity": 1.5}]})
+    )
+    assert isinstance(result, ErrorMessage)
+
+
+# -- parse_message: add_text ------------------------------------------------
+
+
+def test_parse_add_text_basic():
+    result = parse_message(
+        json.dumps({"type": "add_text", "payload": [{"text": "hello"}]})
+    )
+    assert isinstance(result, AddTextMessage)
+    assert len(result.texts) == 1
+    assert result.texts[0].text == "hello"
+
+
+def test_parse_add_text_with_transforms():
+    result = parse_message(
+        json.dumps(
+            {
+                "type": "add_text",
+                "payload": [
+                    {"text": "world", "x": 5, "y": 7, "scale": 0.5, "rotation": 90}
+                ],
+            }
+        )
+    )
+    assert isinstance(result, AddTextMessage)
+    t = result.texts[0]
+    assert t.x == 5
+    assert t.y == 7
+    assert t.scale == 0.5
+    assert t.rotation == 90
+
+
+def test_parse_add_text_requires_text():
+    result = parse_message(json.dumps({"type": "add_text", "payload": [{}]}))
+    assert isinstance(result, ErrorMessage)
+
+
+def test_parse_add_text_requires_non_empty_payload():
+    result = parse_message('{"type": "add_text", "payload": []}')
+    assert isinstance(result, ErrorMessage)
+
+
+# -- Integration: add transforms / add_text dispatch ------------------------
+
+
+def test_add_transforms_round_trip(
+    qtbot, server, session_name, mock_insert_fn, imgfile
+):
+    c = AsyncClient(
+        session_name,
+        add_msg(
+            [
+                {
+                    "path": str(imgfile),
+                    "x": 100.0,
+                    "y": 200.0,
+                    "scale": 1.5,
+                    "rotation": 30.0,
+                    "opacity": 0.8,
+                }
+            ]
+        ),
+    )
+    qtbot.waitUntil(lambda: c.done, timeout=3000)
+    assert c.reply["type"] == "ok"
+    inserts = mock_insert_fn.call_args[0][0]
+    assert inserts[0].x == 100.0
+    assert inserts[0].y == 200.0
+    assert inserts[0].scale == 1.5
+    assert inserts[0].rotation == 30.0
+    assert inserts[0].opacity == 0.8
+
+
+def test_add_text_dispatches_to_insert_text_fn(
+    qtbot, server, session_name, mock_insert_text_fn
+):
+    c = AsyncClient(
+        session_name,
+        make_msg(
+            {
+                "type": "add_text",
+                "payload": [{"text": "# hello", "x": 1.0, "y": 2.0}],
+            }
+        ),
+    )
+    qtbot.waitUntil(lambda: c.done, timeout=3000)
+    assert c.reply["type"] == "ok"
+    mock_insert_text_fn.assert_called_once()
+    texts = mock_insert_text_fn.call_args[0][0]
+    assert texts[0].text == "# hello"
+    assert texts[0].x == 1.0
+    assert texts[0].y == 2.0
+
+
+def test_add_text_serializes_with_other_writes(qtbot, session_name, imgfile):
+    """add_text queues alongside add — both writes use the same slot."""
+    add_callbacks: list = []
+    text_callbacks: list = []
+
+    def slow_add(inserts, on_done):
+        add_callbacks.append(on_done)
+
+    def slow_text(inserts, on_done):
+        text_callbacks.append(on_done)
+
+    srv = SessionServer(
+        session_name,
+        MagicMock(side_effect=slow_add),
+        _mock_async_fn(),
+        _mock_async_fn(),
+        MagicMock(return_value=StatusInfoMessage()),
+        MagicMock(return_value=ItemsMessage(items=())),
+        MagicMock(return_value=ItemMessage(item=None)),
+        MagicMock(return_value=ViewInfoMessage()),
+        MagicMock(side_effect=slow_text),
+    )
+    assert srv.start()
+    try:
+        c1 = AsyncClient(session_name, add_msg([{"path": str(imgfile)}]))
+        qtbot.waitUntil(lambda: len(add_callbacks) == 1, timeout=3000)
+
+        # add_text must wait for add to drain.
+        c2 = AsyncClient(
+            session_name, make_msg({"type": "add_text", "payload": [{"text": "x"}]})
+        )
+        qtbot.waitUntil(lambda: len(srv._queue) >= 1, timeout=3000)
+        assert len(text_callbacks) == 0
+
+        add_callbacks[0]([])
+        qtbot.waitUntil(lambda: len(text_callbacks) == 1, timeout=3000)
+        text_callbacks[0]([])
+
+        qtbot.waitUntil(lambda: c1.done and c2.done, timeout=3000)
+        assert c1.reply["type"] == "ok"
+        assert c2.reply["type"] == "ok"
     finally:
         srv.shutdown()

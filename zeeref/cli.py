@@ -227,7 +227,29 @@ def _exit_on_error_reply(reply: dict) -> None:
 # -- payload helpers --------------------------------------------------------
 
 
+_TRANSFORM_FIELDS: tuple[str, ...] = (
+    "x",
+    "y",
+    "scale",
+    "rotation",
+    "z",
+    "flip",
+    "opacity",
+)
+
+
+def _shared_transform_overrides(args: argparse.Namespace) -> dict:
+    """Collect non-None transform-flag values from *args*."""
+    out: dict = {}
+    for f in _TRANSFORM_FIELDS:
+        v = getattr(args, f, None)
+        if v is not None:
+            out[f] = v
+    return out
+
+
 def _build_add_payload(args: argparse.Namespace) -> list[dict]:
+    overrides = _shared_transform_overrides(args)
     if args.stdin:
         try:
             payload = json.loads(sys.stdin.read())
@@ -235,6 +257,9 @@ def _build_add_payload(args: argparse.Namespace) -> list[dict]:
             sys.exit(f"Error: invalid JSON on stdin: {e}")
         if not isinstance(payload, list) or not payload:
             sys.exit("Error: expected non-empty JSON array on stdin")
+        # CLI flags fill in any field not present in the per-image entry.
+        if overrides:
+            payload = [{**overrides, **entry} for entry in payload]
         return payload
 
     if not args.files:
@@ -245,7 +270,7 @@ def _build_add_payload(args: argparse.Namespace) -> list[dict]:
         if not p.is_file():
             print(f"Warning: {f} does not exist, skipping", file=sys.stderr)
             continue
-        entry: dict[str, str] = {"path": str(p)}
+        entry: dict = {"path": str(p), **overrides}
         if args.title:
             entry["title"] = args.title
         if args.caption:
@@ -265,6 +290,36 @@ def _cmd_add(args: argparse.Namespace) -> None:
     sock, spawn_log = _connect_or_spawn(args.session)
     try:
         reply = _request(sock, {"type": "add", "payload": payload})
+        _exit_on_error_reply(reply)
+        _emit({"ok": True, "session": args.session, "added": len(payload)})
+    finally:
+        sock.disconnectFromServer()
+        _cleanup_spawn_log(spawn_log)
+
+
+def _build_add_text_payload(args: argparse.Namespace) -> list[dict]:
+    overrides = _shared_transform_overrides(args)
+    if args.stdin:
+        try:
+            payload = json.loads(sys.stdin.read())
+        except json.JSONDecodeError as e:
+            sys.exit(f"Error: invalid JSON on stdin: {e}")
+        if not isinstance(payload, list) or not payload:
+            sys.exit("Error: expected non-empty JSON array on stdin")
+        if overrides:
+            payload = [{**overrides, **entry} for entry in payload]
+        return payload
+
+    if not args.text:
+        sys.exit("Error: no text provided")
+    return [{"text": args.text, **overrides}]
+
+
+def _cmd_add_text(args: argparse.Namespace) -> None:
+    payload = _build_add_text_payload(args)
+    sock, spawn_log = _connect_or_spawn(args.session)
+    try:
+        reply = _request(sock, {"type": "add_text", "payload": payload})
         _exit_on_error_reply(reply)
         _emit({"ok": True, "session": args.session, "added": len(payload)})
     finally:
@@ -465,11 +520,75 @@ def main() -> None:
     add_p.add_argument("--title", default=None, help="Title for the image(s)")
     add_p.add_argument("--caption", default=None, help="Caption for the image(s)")
     add_p.add_argument(
+        "--x",
+        type=float,
+        default=None,
+        help="Top-left x in scene coords (matches list output)",
+    )
+    add_p.add_argument(
+        "--y",
+        type=float,
+        default=None,
+        help="Top-left y in scene coords (matches list output)",
+    )
+    add_p.add_argument(
+        "--scale", type=float, default=None, help="Scale factor (1.0 = native)"
+    )
+    add_p.add_argument(
+        "--rotation",
+        type=float,
+        default=None,
+        help="Rotation in degrees (pivots around image top-left)",
+    )
+    add_p.add_argument(
+        "--z", type=float, default=None, help="Z stack order (higher = on top)"
+    )
+    add_p.add_argument(
+        "--flip",
+        type=int,
+        default=None,
+        choices=[-1, 1],
+        help="-1 to flip horizontally",
+    )
+    add_p.add_argument(
+        "--opacity", type=float, default=None, help="0.0 (invisible) to 1.0 (opaque)"
+    )
+    add_p.add_argument(
         "--stdin",
         action="store_true",
-        help="Read JSON payload array from stdin (each entry: {path, title?, caption?})",
+        help="Read JSON payload array from stdin "
+        "(each entry: {path, title?, caption?, x?, y?, scale?, rotation?, z?, flip?, opacity?})",
     )
     add_p.set_defaults(func=_cmd_add)
+
+    # add-text
+    add_text_p = sub.add_parser(
+        "add-text",
+        help="Send a markdown text item to a session (auto-spawns)",
+    )
+    add_text_p.add_argument("session", help="Session name")
+    add_text_p.add_argument("text", nargs="?", help="Markdown text")
+    add_text_p.add_argument(
+        "--x", type=float, default=None, help="Top-left x in scene coords"
+    )
+    add_text_p.add_argument(
+        "--y", type=float, default=None, help="Top-left y in scene coords"
+    )
+    add_text_p.add_argument("--scale", type=float, default=None, help="Scale factor")
+    add_text_p.add_argument(
+        "--rotation", type=float, default=None, help="Rotation in degrees"
+    )
+    add_text_p.add_argument("--z", type=float, default=None, help="Z stack order")
+    add_text_p.add_argument(
+        "--flip", type=int, default=None, choices=[-1, 1], help="-1 to flip"
+    )
+    add_text_p.add_argument("--opacity", type=float, default=None, help="0.0..1.0")
+    add_text_p.add_argument(
+        "--stdin",
+        action="store_true",
+        help="Read JSON payload array from stdin (each entry: {text, x?, y?, ...})",
+    )
+    add_text_p.set_defaults(func=_cmd_add_text)
 
     # start
     start_p = sub.add_parser("start", help="Ensure a session is running (idempotent)")

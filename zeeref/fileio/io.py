@@ -61,11 +61,41 @@ class ImageResult(IOResult):
 
 @dataclass(frozen=True)
 class ImageInsert:
-    """Metadata for an image to be inserted via session IPC."""
+    """Metadata for an image to be inserted via session IPC.
+
+    Transform fields are all optional.  Unset (``None``) means
+    "use the insert default."  ``x``/``y`` are scene coordinates of
+    the item's unscaled top-left (matches the .zref ``items`` table
+    and ``list`` output).  Rotation pivots around local (0, 0).
+    """
 
     path: str
     title: str | None = None
     caption: str | None = None
+    x: float | None = None
+    y: float | None = None
+    scale: float | None = None
+    rotation: float | None = None
+    z: float | None = None
+    flip: int | None = None
+    opacity: float | None = None
+
+
+@dataclass(frozen=True)
+class TextInsert:
+    """Markdown text item to be inserted via session IPC.
+
+    Transform field semantics match :class:`ImageInsert`.
+    """
+
+    text: str
+    x: float | None = None
+    y: float | None = None
+    scale: float | None = None
+    rotation: float | None = None
+    z: float | None = None
+    flip: int | None = None
+    opacity: float | None = None
 
 
 logger = logging.getLogger(__name__)
@@ -209,8 +239,15 @@ def _insert_image(
     *,
     title: str | None = None,
     caption: str | None = None,
+    transforms: "ImageInsert | None" = None,
 ) -> PixmapItemSnapshot:
-    """Write tiles to .swp and queue a snapshot for the main thread."""
+    """Write tiles to .swp and queue a snapshot for the main thread.
+
+    *pos* is the scene-coord point at which to **visually center** the
+    image when no explicit ``x``/``y`` is supplied via *transforms*.
+    The centering math accounts for ``scale`` so a scaled image still
+    lands centered at *pos*.
+    """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     from zeeref.fileio.tiling import encode_tile, generate_tiles, pick_format
@@ -252,15 +289,33 @@ def _insert_image(
     if caption:
         snap_data["caption"] = caption
 
+    scale = transforms.scale if transforms and transforms.scale is not None else 1.0
+    rotation = (
+        transforms.rotation if transforms and transforms.rotation is not None else 0.0
+    )
+    z = transforms.z if transforms and transforms.z is not None else 0
+    flip = transforms.flip if transforms and transforms.flip is not None else 1
+    if transforms and transforms.opacity is not None:
+        snap_data["opacity"] = transforms.opacity
+
+    if transforms and transforms.x is not None:
+        x = transforms.x
+    else:
+        x = pos.x() - (w * scale) / 2
+    if transforms and transforms.y is not None:
+        y = transforms.y
+    else:
+        y = pos.y() - (h * scale) / 2
+
     snap = PixmapItemSnapshot(
         save_id=uuid.uuid4().hex,
         type="pixmap",
-        x=pos.x() - w / 2,
-        y=pos.y() - h / 2,
-        z=0,
-        scale=1,
-        rotation=0,
-        flip=1,
+        x=x,
+        y=y,
+        z=z,
+        scale=scale,
+        rotation=rotation,
+        flip=flip,
         data=snap_data,
         created_at=time.time(),
         image_id=image_id,
@@ -287,12 +342,14 @@ def insert_image_files(
 
     for i, raw_filename in enumerate(filenames):
         t_load = time.monotonic()
-        # Extract metadata if present
+        # Extract metadata + transforms if present
         title: str | None = None
         caption: str | None = None
+        transforms: ImageInsert | None = None
         if isinstance(raw_filename, ImageInsert):
             title = raw_filename.title
             caption = raw_filename.caption
+            transforms = raw_filename
             raw_filename = raw_filename.path
 
         logger.info(f"Loading image from file {raw_filename}")
@@ -307,7 +364,16 @@ def insert_image_files(
             errors.append(filename)
             continue
 
-        _insert_image(pil_img, filename, pos, io, scene, title=title, caption=caption)
+        _insert_image(
+            pil_img,
+            filename,
+            pos,
+            io,
+            scene,
+            title=title,
+            caption=caption,
+            transforms=transforms,
+        )
         if worker.canceled:
             break
         worker.msleep(10)
