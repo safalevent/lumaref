@@ -483,7 +483,7 @@ wheels = [
 
 [[package]]
 name = "zeeref"
-version = "0.3.4.dev0"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "mistune" },
@@ -533,8 +533,8 @@ requires-dist = [
     { name = "pybadges", marker = "extra == 'dev'", specifier = "==3.0.1" },
     { name = "pyinstaller", marker = "extra == 'build'", specifier = ">=6.19.0" },
     { name = "pyinstaller", marker = "extra == 'dev'", specifier = ">=6.19.0" },
-    { name = "pyqt6", specifier = ">=6.7.0,<=6.7.0" },
-    { name = "pyqt6-qt6", specifier = ">=6.7.0,<=6.7.0" },
+    { name = "pyqt6", specifier = "<=6.7.0,>=6.7.0" },
+    { name = "pyqt6-qt6", specifier = "<=6.7.0,>=6.7.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = "==8.2.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = "==8.2.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = "==5.0.0" },
