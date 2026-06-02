@@ -547,6 +547,11 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
         if key in self._tile_children:
             return
         child = QtWidgets.QGraphicsPixmapItem(pixmap, self._clip_item)
+        # Default is FastTransformation (nearest-neighbor); QGraphicsPixmapItem
+        # forces the painter's SmoothPixmapTransform hint to match its own mode,
+        # overriding the view-level hint. Tiles land at an on-screen scale in
+        # (0.5, 1.0], so without smooth scaling the final downscale aliases.
+        child.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
         child.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
         child.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
         child.setFlag(
