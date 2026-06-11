@@ -1226,7 +1226,25 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
         self._cached_rect = QtCore.QRectF(0, 0, 1, 1)
         self._cache_pixmap: QtGui.QPixmap | None = None
         self.init_selectable()
+        self.setZValue(1e9)
         logger.debug(f"Initialized {self}")
+
+    def setZValue(self, z: float) -> None:
+        # Drawings should always be on top of images. We enforce this by
+        # keeping their Z-values extremely high (>1e9), and we bypass
+        # BaseItemMixin.setZValue so we don't skew the scene's max_z for images.
+        if z < 1e9:
+            z += 1e9
+        QtWidgets.QGraphicsItem.setZValue(self, z)
+
+    def bring_to_front(self) -> None:
+        scene = self.zee_scene()
+        if scene:
+            max_path_z = 1e9
+            for item in scene.items():
+                if isinstance(item, ZeePathItem) and item is not self:
+                    max_path_z = max(max_path_z, item.zValue())
+            self.setZValue(max_path_z + scene.Z_STEP)
 
     @classmethod
     def from_snapshot(cls, snap: ItemSnapshot) -> ZeePathItem:

@@ -389,6 +389,16 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         self.on_action_movewin_mode()
 
     def on_action_undo(self) -> None:
+        if self.active_mode == self.DRAW_MODE:
+            assert self.draw_item is not None
+            if self.draw_item.strokes:
+                logger.debug("Undo drawing stroke")
+                self.draw_item.undo_stroke()
+            else:
+                logger.debug("No strokes left, exiting draw mode via undo")
+                self.exit_draw_mode(commit=False)
+            return
+
         logger.debug("Undo: %s" % self.undo_stack.undoText())
         self.cancel_active_modes()
         self.undo_stack.undo()
@@ -1082,10 +1092,15 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         self.active_mode = self.DRAW_MODE
         self.draw_item = ZeePathItem()
         self.scene.addItem(self.draw_item)
+        self.draw_item.bring_to_front()
         from zeeref.actions.actions import actions
         action = actions.get("draw_mode")
         if action and action.qaction:
-            action.qaction.setChecked(True)
+            if not action.qaction.isChecked():
+                action.qaction.setChecked(True)
+        undo_action = actions.get("undo")
+        if undo_action and undo_action.qaction:
+            undo_action.qaction.setEnabled(True)
 
     def exit_draw_mode(self, commit: bool = True) -> None:
         logger.debug("Exiting draw mode")
@@ -1103,6 +1118,9 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         action = actions.get("draw_mode")
         if action and action.qaction:
             action.qaction.setChecked(False)
+        undo_action = actions.get("undo")
+        if undo_action and undo_action.qaction:
+            undo_action.qaction.setEnabled(self.undo_stack.canUndo())
 
     def cancel_active_modes(self) -> None:
         self.scene.cancel_active_modes()
