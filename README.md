@@ -1,6 +1,6 @@
 # ZeeRef
 
-I liked ZeeRef and BuzzRef both and trying to merge their best features together.
+I liked ZeeRef and BuzzRef both and trying to merge their best features together using Gemini.
 
 A whiteboard for images and markdown notes on an infinite canvas. Use
 it to track a project over time, or as a mood board for reference
