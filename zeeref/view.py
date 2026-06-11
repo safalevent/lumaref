@@ -47,7 +47,7 @@ from zeeref.fileio.export import exporter_registry
 from zeeref.fileio.io import ImageResult, stitch_image
 from zeeref.fileio.tilecache import TileCache, get_tile_cache, set_tile_cache
 from zeeref import widgets
-from zeeref.items import ZeePixmapItem, ZeeTextItem, create_item_from_snapshot
+from zeeref.items import ZeePixmapItem, ZeeTextItem, ZeePathItem, create_item_from_snapshot
 from zeeref.main_controls import MainControlsMixin
 from zeeref.scene import ZeeGraphicsScene
 from zeeref.utils import get_file_extension_from_format, qcolor_to_hex
@@ -70,6 +70,7 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
     PAN_MODE = 1
     ZOOM_MODE = 2
     SAMPLE_COLOR_MODE = 3
+    DRAW_MODE = 4
 
     def __init__(
         self, app: QtWidgets.QApplication, parent: QtWidgets.QMainWindow | None = None
@@ -116,6 +117,10 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         self._tiles_dirty: bool = False
         self.previous_transform: dict[str, Any] | None = None
         self.active_mode: int | None = None
+        self.draw_item: ZeePathItem | None = None
+        self.draw_current_stroke: dict[str, Any] | None = None
+        self.draw_brush_size: float = 20.0
+        self.draw_brush_color: list[int] = [200, 200, 200, 255]
         self.event_start: QtCore.QPointF = QtCore.QPointF()
         self.event_anchor: QtCore.QPointF = QtCore.QPointF()
         self.event_inverted: bool = False
@@ -1061,6 +1066,51 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
             },
         )
 
+    def on_action_draw_mode(self, checked: bool = False) -> None:
+        if checked:
+            if self.active_mode != self.DRAW_MODE:
+                self.enter_draw_mode()
+        else:
+            if self.active_mode == self.DRAW_MODE:
+                self.exit_draw_mode(commit=True)
+
+    def enter_draw_mode(self) -> None:
+        self.cancel_active_modes()
+        logger.debug("Entering draw mode")
+        self.require_viewport().setCursor(Qt.CursorShape.CrossCursor)
+        self.setMouseTracking(True)
+        self.active_mode = self.DRAW_MODE
+        self.draw_item = ZeePathItem()
+        self.scene.addItem(self.draw_item)
+        from zeeref.actions.actions import actions
+        action = actions.get("draw_mode")
+        if action and action.qaction:
+            action.qaction.setChecked(True)
+
+    def exit_draw_mode(self, commit: bool = True) -> None:
+        logger.debug("Exiting draw mode")
+        self.require_viewport().unsetCursor()
+        self.setMouseTracking(False)
+        self.active_mode = None
+        if self.draw_item:
+            if commit and self.draw_item.strokes:
+                self.scene.removeItem(self.draw_item)
+                self.undo_stack.push(commands.InsertItems(self.scene, [self.draw_item]))
+            else:
+                self.scene.removeItem(self.draw_item)
+            self.draw_item = None
+        from zeeref.actions.actions import actions
+        action = actions.get("draw_mode")
+        if action and action.qaction:
+            action.qaction.setChecked(False)
+
+    def cancel_active_modes(self) -> None:
+        self.scene.cancel_active_modes()
+        self.cancel_sample_color_mode()
+        if self.active_mode == self.DRAW_MODE:
+            self.exit_draw_mode(commit=True)
+        self.active_mode = None
+
     def on_action_insert_images(self) -> None:
         self.cancel_active_modes()
         formats = self.get_supported_image_formats(QtGui.QImageReader)
@@ -1313,6 +1363,15 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
     def wheelEvent(self, event: QtGui.QWheelEvent | None) -> None:
         assert event is not None
 
+        if self.active_mode == self.DRAW_MODE:
+            delta = event.angleDelta().y()
+            if delta > 0:
+                self.draw_brush_size = min(200.0, self.draw_brush_size + 2.0)
+            elif delta < 0:
+                self.draw_brush_size = max(1.0, self.draw_brush_size - 2.0)
+            event.accept()
+            return
+
         # Trackpads and other touch surfaces deliver scroll events with
         # a non-default phase; route those to two-finger pan and skip
         # the modifier-based wheel routing below. Mouse wheels (even
@@ -1357,6 +1416,24 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
 
     def mousePressEvent(self, event: QtGui.QMouseEvent | None) -> None:
         assert event is not None
+
+        if self.active_mode == self.DRAW_MODE:
+            if event.button() == Qt.MouseButton.LeftButton:
+                assert self.draw_item is not None
+                pos = self.mapToScene(event.pos())
+                pressure = getattr(event, "pressure", lambda: 1.0)() if hasattr(event, "pressure") else 1.0
+                self.draw_current_stroke = {
+                    "color": self.draw_brush_color,
+                    "base_size": self.draw_brush_size,
+                    "points": [{"x": pos.x(), "y": pos.y(), "pressure": pressure}],
+                }
+                self.draw_item.temp_stroke = self.draw_current_stroke
+                self.draw_item.update()
+            elif event.button() == Qt.MouseButton.RightButton:
+                self.exit_draw_mode(commit=True)
+            event.accept()
+            return
+
         if self.mousePressEventMainControls(event):
             return
 
@@ -1403,6 +1480,18 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent | None) -> None:
         assert event is not None
+
+        if self.active_mode == self.DRAW_MODE and self.draw_current_stroke is not None:
+            pos = self.mapToScene(event.pos())
+            pressure = getattr(event, "pressure", lambda: 1.0)() if hasattr(event, "pressure") else 1.0
+            self.draw_current_stroke["points"].append(
+                {"x": pos.x(), "y": pos.y(), "pressure": pressure}
+            )
+            assert self.draw_item is not None
+            self.draw_item.update()
+            event.accept()
+            return
+
         if self.active_mode == self.PAN_MODE:
             self.reset_previous_transform()
             pos = event.position()
@@ -1436,6 +1525,16 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent | None) -> None:
         assert event is not None
+
+        if self.active_mode == self.DRAW_MODE:
+            if event.button() == Qt.MouseButton.LeftButton and self.draw_current_stroke is not None:
+                assert self.draw_item is not None
+                self.draw_item.add_stroke(self.draw_current_stroke)
+                self.draw_item.temp_stroke = None
+                self.draw_current_stroke = None
+            event.accept()
+            return
+
         if self.active_mode == self.PAN_MODE:
             logger.trace("End pan")
             self.require_viewport().unsetCursor()

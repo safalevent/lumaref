@@ -173,6 +173,13 @@ actions = ActionList(
             callback="on_action_insert_text",
         ),
         Action(
+            id="draw_mode",
+            text="&Draw",
+            shortcuts=["D"],
+            checkable=True,
+            callback="on_action_draw_mode",
+        ),
+        Action(
             id="undo",
             text="&Undo",
             shortcuts=["Ctrl+Z"],

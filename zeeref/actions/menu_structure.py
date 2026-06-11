@@ -50,6 +50,7 @@ menu_structure = [
             "show_titlebar",
         ],
     },
+    "draw_mode",
     "insert_text",
     {
         "menu": "&Transform",
