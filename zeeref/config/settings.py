@@ -166,7 +166,7 @@ class ZeeSettings(QtCore.QSettings):
             "validate": lambda x: 1.0 <= x <= 500.0,
         },
         "Draw/brush_color": {
-            "default": "#f0f2ff",
+            "default": "#f0f2f5",
             "cast": str,
         },
     }

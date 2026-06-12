@@ -400,6 +400,17 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
         self._clip_item.setRect(value)
         self.update()
 
+    def has_selection_outline(self) -> bool:
+        if self.crop_mode:
+            return False
+        return self.isSelected()
+
+    def has_selection_handles(self) -> bool:
+        if self.crop_mode:
+            return False
+        scene = self.zee_scene()
+        return self.isSelected() and scene is not None and scene.has_single_selection()
+
     def sample_color_at(self, pos: QtCore.QPointF) -> QtGui.QColor | None:
         local = self.mapFromScene(pos)
         scale = 1 << self._current_level

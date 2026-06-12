@@ -253,6 +253,23 @@ def test_has_selection_handles_when_selected_multi(scene, item):
     item.has_selection_handles() is False
 
 
+def test_has_selection_outline_when_selected_and_crop_mode(scene, item):
+    scene.addItem(item)
+    item.setSelected(True)
+    item.crop_mode = True
+    assert item.has_selection_outline() is False
+
+
+def test_has_selection_handles_when_selected_single_and_crop_mode(scene, item):
+    scene.addItem(item)
+    item.setSelected(True)
+    item2 = ZeePixmapItem(QtGui.QImage())
+    scene.addItem(item2)
+    item2.setSelected(False)
+    item.crop_mode = True
+    assert item.has_selection_handles() is False
+
+
 def test_selection_action_items(qapp):
     item = ZeePixmapItem(QtGui.QImage())
     assert item.selection_action_items() == [item]
