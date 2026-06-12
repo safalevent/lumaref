@@ -1738,4 +1738,40 @@ def test_press_d_shortcut(view):
     view.keyPressEvent(event)
 
 
+def test_draw_undo_draw_undo(view):
+    view.enter_draw_mode()
+    # First stroke
+    event_press = QtGui.QMouseEvent(
+        QtCore.QEvent.Type.MouseButtonPress,
+        QtCore.QPointF(100, 100),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    view.mousePressEvent(event_press)
+    event_release = QtGui.QMouseEvent(
+        QtCore.QEvent.Type.MouseButtonRelease,
+        QtCore.QPointF(100, 100),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    view.mouseReleaseEvent(event_release)
+    assert len(view.draw_item.strokes) == 1
+
+    # Undo first stroke
+    view.on_action_undo()
+    assert len(view.draw_item.strokes) == 0
+
+    # Second stroke
+    view.mousePressEvent(event_press)
+    view.mouseReleaseEvent(event_release)
+    assert len(view.draw_item.strokes) == 1
+
+    # Undo second stroke
+    view.on_action_undo()
+    assert len(view.draw_item.strokes) == 0
+
+
+
 

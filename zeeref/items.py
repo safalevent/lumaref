@@ -1493,11 +1493,15 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
 
     def undo_stroke(self) -> None:
         if self.strokes:
+            old_rect = self.sceneBoundingRect()
             self.prepareGeometryChange()
             self.strokes.pop()
             self._update_bounding_rect()
             self._invalidate_cache()
             self.update()
+            scene = self.scene()
+            if scene:
+                scene.update(old_rect)
 
     def _invalidate_cache(self) -> None:
         self._cache_pixmap = None
