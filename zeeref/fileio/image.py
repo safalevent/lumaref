@@ -78,6 +78,19 @@ def load_pil(path: Path) -> Image.Image | None:
         t0 = time.monotonic()
         pil_img = Image.open(path)
         original_format = pil_img.format
+        is_animated = getattr(pil_img, "is_animated", False)
+
+        if original_format == "GIF" and is_animated:
+            raw_bytes = path.read_bytes()
+            pil_img.close()
+            from io import BytesIO
+            pil_img = Image.open(BytesIO(raw_bytes))
+            pil_img.custom_raw_bytes = raw_bytes
+            pil_img.load()
+            t1 = time.monotonic()
+            logger.debug(f"load_pil: loaded animated GIF in {t1 - t0:.3f}s")
+            return pil_img
+
         t1 = time.monotonic()
         pil_img = ImageOps.exif_transpose(pil_img)
         if original_format and not pil_img.format:
@@ -128,7 +141,15 @@ def load_pil_from_source(path: Path | QtCore.QUrl) -> tuple[Image.Image | None, 
     except URLError as e:
         logger.debug(f"Downloading image failed: {e.reason}")
         return (None, url)
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_file = Path(tmp) / "img"
+    pil_img = None
+    tmp_dir = tempfile.TemporaryDirectory()
+    try:
+        tmp_file = Path(tmp_dir.name) / "img"
         tmp_file.write_bytes(imgdata)
-        return (load_pil(tmp_file), url)
+        pil_img = load_pil(tmp_file)
+    finally:
+        try:
+            tmp_dir.cleanup()
+        except Exception as e:
+            logger.debug(f"Failed to clean up temp directory {tmp_dir.name}: {e}")
+    return (pil_img, url)

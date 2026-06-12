@@ -51,6 +51,8 @@ def generate_tiles(
     Pyramid downsampling uses PIL LANCZOS; cropping into tiles uses Qt.
     Stops after the first level where the entire image fits in one tile.
     """
+    if getattr(pil_img, "format", None) == "GIF" and getattr(pil_img, "is_animated", False):
+        raise ValueError("Cannot generate tiles for an animated GIF")
     current_pil = pil_img
     level = 0
     while True:
@@ -89,7 +91,10 @@ def pick_format(pil_img: Image.Image) -> str:
 
     PNG sources stay PNG to avoid lossy re-encoding. JPEG and other
     formats use JPEG for large non-alpha images, PNG otherwise.
+    Animated GIFs are stored as raw GIF bytes.
     """
+    if pil_img.format == "GIF" and getattr(pil_img, "is_animated", False):
+        return "gif"
     if pil_img.format == "PNG" or pil_img.mode == "RGBA":
         return "png"
     w, h = pil_img.size

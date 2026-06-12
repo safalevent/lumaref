@@ -45,6 +45,7 @@ class PixmapItemSnapshot(ItemSnapshot):
     image_id: str
     width: int
     height: int
+    format: str = "png"  # 'png', 'jpeg', or 'gif'
 
 
 @dataclass(frozen=True)

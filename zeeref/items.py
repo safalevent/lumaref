@@ -47,6 +47,26 @@ logger = logging.getLogger(__name__)
 item_registry: dict[str, type[ZeeItemMixin]] = {}
 
 
+class _GifLoader(QtCore.QObject):
+    """Singleton QObject used to marshal GIF bytes to the main thread."""
+
+    gif_blob_ready = QtCore.pyqtSignal(object, bytes)  # (ZeePixmapItem, raw_bytes)
+
+    _inst: "_GifLoader | None" = None
+
+    @classmethod
+    def instance(cls) -> "_GifLoader":
+        if cls._inst is None:
+            cls._inst = cls()
+            cls._inst.gif_blob_ready.connect(cls._inst._dispatch)
+        return cls._inst
+
+    @QtCore.pyqtSlot(object, bytes)
+    def _dispatch(self, item: object, raw: bytes) -> None:
+        from zeeref.items import ZeePixmapItem
+        if isinstance(item, ZeePixmapItem):
+            item._on_gif_blob_loaded(raw)
+
 def register_item(cls: type[ZeeItemMixin]) -> type[ZeeItemMixin]:
     item_registry[cls.TYPE] = cls
     return cls
@@ -207,6 +227,16 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
         self.image_id: str = uuid.uuid4().hex
         self.title: str | None = None
         self.caption: str | None = None
+        # GIF animation state
+        self._is_gif: bool = False
+        self._gif_bytes: bytes | None = None
+        self._movie: QtGui.QMovie | None = None
+        self._movie_buffer: QtCore.QBuffer | None = None
+        self._movie_ba: QtCore.QByteArray | None = None  # must outlive _movie_buffer
+        self._gif_reversed: bool = False
+        self._gif_frames: list[tuple[QtGui.QPixmap, int]] = []  # (pixmap, delay_ms)
+        self._gif_timer: QtCore.QTimer | None = None
+        self._gif_frame_idx: int = 0
         # Invisible clip item parents all tile children so they are
         # clipped to the image/crop rect without affecting shape().
         self._clip_item = QtWidgets.QGraphicsRectItem(self)
@@ -244,6 +274,7 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
             image_id=self.image_id,
             width=self._image_width,
             height=self._image_height,
+            format="gif" if self._is_gif else "png",
         )
 
     @classmethod
@@ -263,6 +294,7 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
         """Create a placeholder ZeePixmapItem from a loaded snapshot.
 
         Tile data is loaded on demand via the TileCache.
+        For GIF format, blob is loaded directly via _load_gif_async.
         """
         item = cls(QtGui.QImage())
         item._image_width = snap.width
@@ -274,6 +306,7 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
         item.filename = snap.data.get("filename")
         item.title = snap.data.get("title")
         item.caption = snap.data.get("caption")
+        item._gif_reversed = snap.data.get("gif_reversed", False)
         if "crop" in snap.data:
             item.crop = QtCore.QRectF(*snap.data["crop"])
         item.setOpacity(snap.data.get("opacity", 1))
@@ -283,6 +316,9 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
         item.setRotation(snap.rotation)
         if snap.flip != item.flip():
             item.do_flip()
+        if snap.format == "gif":
+            item._is_gif = True
+            item._load_gif_async()
         return item
 
     def __str__(self) -> str:
@@ -351,6 +387,8 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
             d["title"] = self.title
         if self.caption:
             d["caption"] = self.caption
+        if self._gif_reversed:
+            d["gif_reversed"] = True
         return d
 
     def get_filename_for_export(
@@ -452,6 +490,149 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
         if self._subscribed:
             get_tile_cache().unsubscribe(self.image_id, self)
             self._subscribed = False
+        self._stop_gif()
+
+    def _stop_gif(self) -> None:
+        """Stop and clean up any active GIF playback."""
+        if self._gif_timer is not None:
+            self._gif_timer.stop()
+            self._gif_timer = None
+        if self._movie is not None:
+            self._movie.stop()
+            self._movie.setDevice(None)  # detach before destroying buffer
+            self._movie = None
+        if self._movie_buffer is not None:
+            self._movie_buffer.close()
+            self._movie_buffer = None
+        self._movie_ba = None  # release the byte array last
+
+    def _load_gif_async(self) -> None:
+        """Load the raw GIF blob from the scratch DB in a background thread."""
+        from zeeref.fileio.sql import SQLiteIO
+        import threading
+
+        image_id = self.image_id
+        loader = _GifLoader.instance()
+        item_ref = self
+        logger.debug(f"[_load_gif_async] Starting for image_id={image_id[:8]}")
+
+        def _fetch() -> None:
+            try:
+                cache = get_tile_cache()
+                swp = cache._loader._swp_path
+                logger.debug(f"[_load_gif_async] Using swp={swp}")
+                io = SQLiteIO(swp, readonly=True)
+                row = io.fetchone(
+                    "SELECT data FROM tiles WHERE image_id=? AND level=0 AND col=0 AND row=0",
+                    (image_id,),
+                )
+                io._close_connection()
+                if row and row[0]:
+                    raw: bytes = bytes(row[0])
+                    logger.debug(f"[_load_gif_async] Found GIF blob of size={len(raw)} bytes")
+                    loader.gif_blob_ready.emit(item_ref, raw)
+                else:
+                    logger.debug(f"[_load_gif_async] No GIF blob found in database for image_id={image_id[:8]}")
+            except Exception as e:
+                logger.exception(f"[_load_gif_async] Failed to load GIF blob for {image_id[:8]}: {e}")
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _on_gif_blob_loaded(self, raw: bytes) -> None:
+        """Called on the main thread when GIF bytes are ready."""
+        logger.debug(f"[_on_gif_blob_loaded] GIF bytes received: size={len(raw)}")
+        self._gif_bytes = raw
+        self._setup_movie()
+
+    def _extract_gif_frames(self) -> None:
+        """Extract all GIF frames using PIL for reverse playback.
+
+        PIL decodes frames synchronously without needing a Qt event loop,
+        avoiding the freeze that QMovie.jumpToFrame() causes on the main thread.
+        """
+        if not self._gif_bytes or self._gif_frames:
+            return  # Already extracted or nothing to extract
+        from io import BytesIO
+        try:
+            pil_gif = Image.open(BytesIO(self._gif_bytes))
+            frames: list[tuple[QtGui.QPixmap, int]] = []
+            while True:
+                duration = pil_gif.info.get("duration", 100)
+                frame_rgba = pil_gif.convert("RGBA")
+                data = frame_rgba.tobytes()
+                qimg = QtGui.QImage(
+                    data,
+                    frame_rgba.width,
+                    frame_rgba.height,
+                    frame_rgba.width * 4,
+                    QtGui.QImage.Format.Format_RGBA8888,
+                )
+                frames.append((QtGui.QPixmap.fromImage(qimg.copy()), int(duration)))
+                pil_gif.seek(pil_gif.tell() + 1)
+        except EOFError:
+            pass
+        except Exception:
+            logger.exception("Failed to extract GIF frames for reverse playback")
+        self._gif_frames = frames
+
+    def _setup_movie(self) -> None:
+        """Set up QMovie or reverse timer for playback."""
+        self._stop_gif()
+        if not self._gif_bytes:
+            logger.debug("[_setup_movie] No GIF bytes found")
+            return
+        if self._gif_reversed and self._gif_frames:
+            logger.debug("[_setup_movie] Playing reversed")
+            self._play_reversed()
+        else:
+            logger.debug("[_setup_movie] Setting up QMovie")
+            # Keep QByteArray alive for the lifetime of the movie.
+            # If _movie_ba goes out of scope, QBuffer reads freed memory and freezes.
+            self._movie_ba = QtCore.QByteArray(self._gif_bytes)
+            self._movie_buffer = QtCore.QBuffer(self._movie_ba)
+            self._movie_buffer.open(QtCore.QIODevice.OpenModeFlag.ReadOnly)
+            self._movie = QtGui.QMovie()
+            self._movie.setDevice(self._movie_buffer)
+            self._movie.frameChanged.connect(self._on_frame_changed)
+            logger.debug(f"[_setup_movie] QMovie is valid: {self._movie.isValid()}")
+            self._movie.start()
+            logger.debug(f"[_setup_movie] QMovie started: state={self._movie.state()}")
+
+    def _on_frame_changed(self, _frame: int) -> None:
+        """Update pixmap when QMovie advances a frame."""
+        if self._movie:
+            pm = self._movie.currentPixmap()
+            logger.debug(f"[_on_frame_changed] Frame {_frame} changed, pixmap size={pm.size()}")
+            self.setPixmap(pm)
+            self.update()
+
+    def _play_reversed(self) -> None:
+        """Extract frames (lazily) then step through in reverse using a QTimer."""
+        self._extract_gif_frames()  # No-op if already done
+        if not self._gif_frames:
+            return
+        self._gif_frame_idx = len(self._gif_frames) - 1
+        timer = QtCore.QTimer()
+        timer.setSingleShot(True)
+        self._gif_timer = timer
+
+        def _next() -> None:
+            if not self._gif_frames or self._gif_timer is None:
+                return
+            pixmap, delay = self._gif_frames[self._gif_frame_idx]
+            self.setPixmap(pixmap)
+            self.update()
+            self._gif_frame_idx = (self._gif_frame_idx - 1) % len(self._gif_frames)
+            self._gif_timer.setInterval(max(10, delay))
+            self._gif_timer.start()
+
+        timer.timeout.connect(_next)
+        _next()
+
+    def toggle_gif_reverse(self) -> None:
+        """Toggle reversed playback for this GIF."""
+        self._gif_reversed = not self._gif_reversed
+        self._setup_movie()
 
     def update_visible_tiles(self, viewport_rect: QtCore.QRectF) -> None:
         """Compute and request needed tiles for the current viewport.
@@ -459,6 +640,10 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
         Called by the view for each visible item during viewport checks.
         viewport_rect is in scene coordinates.
         """
+        if self._is_gif:
+            # GIFs are animated via QMovie/QTimer — no tile loading needed
+            return
+
         from math import ceil, floor, log2
 
         self._ensure_subscribed()
@@ -786,6 +971,11 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
         widget: QtWidgets.QWidget | None = None,
     ) -> None:
         assert painter is not None
+        if self._is_gif:
+            painter.save()
+            painter.setClipRect(self.crop)
+            super().paint(painter, option, widget)
+            painter.restore()
 
         # Tile children paint themselves behind the parent
         # (ItemStacksBehindParent), so everything below here renders on top.

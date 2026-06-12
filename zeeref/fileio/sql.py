@@ -191,7 +191,7 @@ class SQLiteIO:
         rows = self.fetchall(
             "SELECT items.id, type, x, y, z, scale, rotation, flip, "
             "items.data, items.created_at, items.image_id, "
-            "images.width, images.height "
+            "images.width, images.height, images.format "
             "FROM items "
             "LEFT JOIN images ON items.image_id = images.id"
         )
@@ -227,6 +227,7 @@ class SQLiteIO:
                         image_id=row[10] or "",
                         width=row[11] or 0,
                         height=row[12] or 0,
+                        format=row[13] or "png",
                     )
                 )
             else:

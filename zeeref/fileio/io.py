@@ -240,6 +240,7 @@ def _insert_image(
     title: str | None = None,
     caption: str | None = None,
     transforms: "ImageInsert | None" = None,
+    raw_bytes: bytes | None = None,
 ) -> PixmapItemSnapshot:
     """Write tiles to .swp and queue a snapshot for the main thread.
 
@@ -247,6 +248,10 @@ def _insert_image(
     image when no explicit ``x``/``y`` is supplied via *transforms*.
     The centering math accounts for ``scale`` so a scaled image still
     lands centered at *pos*.
+
+    For animated GIFs, *raw_bytes* must be provided. The raw bytes are
+    stored as a single blob at (level=0, col=0, row=0) with format='gif',
+    bypassing the tile pyramid entirely.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -263,25 +268,34 @@ def _insert_image(
         (image_id, w, h, fmt),
     )
 
-    def _encode(
-        args: tuple[QtGui.QImage, int, int, int],
-    ) -> tuple[int, int, int, bytes]:
-        tile_qimg, level, col, row = args
-        return (level, col, row, encode_tile(tile_qimg, fmt))
+    if fmt == "gif" and raw_bytes is not None:
+        # Store raw GIF bytes as a single blob — no pyramid needed
+        io.ex(
+            "INSERT INTO tiles (image_id, level, col, row, data) VALUES (?, 0, 0, 0, ?)",
+            (image_id, raw_bytes),
+        )
+        io.connection.commit()
+        logger.debug(f"_insert_image: GIF stored ({len(raw_bytes)} bytes) in {time.monotonic() - t0:.3f}s")
+    else:
+        def _encode(
+            args: tuple[QtGui.QImage, int, int, int],
+        ) -> tuple[int, int, int, bytes]:
+            tile_qimg, level, col, row = args
+            return (level, col, row, encode_tile(tile_qimg, fmt))
 
-    tile_count = 0
-    with ThreadPoolExecutor() as pool:
-        futures = [pool.submit(_encode, args) for args in generate_tiles(pil_img)]
-        for future in as_completed(futures):
-            level, col, row, data = future.result()
-            io.ex(
-                "INSERT INTO tiles (image_id, level, col, row, data) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (image_id, level, col, row, data),
-            )
-            tile_count += 1
-    io.connection.commit()
-    logger.debug(f"_insert_image: {tile_count} tiles in {time.monotonic() - t0:.3f}s")
+        tile_count = 0
+        with ThreadPoolExecutor() as pool:
+            futures = [pool.submit(_encode, args) for args in generate_tiles(pil_img)]
+            for future in as_completed(futures):
+                level, col, row, data = future.result()
+                io.ex(
+                    "INSERT INTO tiles (image_id, level, col, row, data) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (image_id, level, col, row, data),
+                )
+                tile_count += 1
+        io.connection.commit()
+        logger.debug(f"_insert_image: {tile_count} tiles in {time.monotonic() - t0:.3f}s")
 
     snap_data: dict[str, Any] = {"filename": filename}
     if title:
@@ -321,6 +335,7 @@ def _insert_image(
         image_id=image_id,
         width=w,
         height=h,
+        format=fmt,
     )
     scene.add_item_later(snap, selected=True)
     return snap
@@ -365,6 +380,19 @@ def insert_image_files(
             errors.append(filename)
             continue
 
+        # For animated GIFs, read raw bytes so they can be stored intact
+        raw_bytes: bytes | None = None
+        if pil_img.format == "GIF" and getattr(pil_img, "is_animated", False):
+            raw_bytes = getattr(pil_img, "custom_raw_bytes", None)
+            if raw_bytes is None:
+                local_path = None
+                if isinstance(load_path, Path):
+                    local_path = load_path
+                elif isinstance(load_path, QtCore.QUrl) and load_path.isLocalFile():
+                    local_path = Path(load_path.toLocalFile())
+                if local_path and local_path.exists():
+                    raw_bytes = local_path.read_bytes()
+
         snap = _insert_image(
             pil_img,
             filename,
@@ -374,6 +402,7 @@ def insert_image_files(
             title=title,
             caption=caption,
             transforms=transforms,
+            raw_bytes=raw_bytes,
         )
         created_ids.append(snap.save_id)
         if worker.canceled:
@@ -512,6 +541,7 @@ class ImageLoader(QtCore.QObject):
 
     def __init__(self, swp_path: Path, num_workers: int = 4) -> None:
         super().__init__()
+        self._swp_path = swp_path
         self._queue: queue.Queue[TileKey | None] = queue.Queue()
         self._requested: set[TileKey] = set()
         self._workers: list[_LoaderWorker] = []

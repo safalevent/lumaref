@@ -422,5 +422,13 @@ actions = ActionList(
             text="&Settings",
             callback="on_action_settings",
         ),
+        Action(
+            id="gif_reverse",
+            text="Reverse &GIF",
+            checkable=True,
+            callback="on_action_gif_reverse",
+            group="active_when_gif_selected",
+            enabled=False,
+        ),
     ]
 )

@@ -201,9 +201,14 @@ def _migrate_to_tile_pyramids(io):
     from zeeref.fileio.tiling import encode_tile, generate_tiles, pick_format
 
     rows = io.fetchall(
-        "SELECT image_id, data FROM tiles WHERE level = 0 AND col = 0 AND row = 0"
+        "SELECT image_id, data, images.format FROM tiles "
+        "JOIN images ON tiles.image_id = images.id "
+        "WHERE level = 0 AND col = 0 AND row = 0"
     )
-    for image_id, blob in rows:
+    for image_id, blob, fmt in rows:
+        if fmt == "gif":
+            # Raw GIF bytes — skip pyramid generation
+            continue
         if blob is None:
             continue
         try:

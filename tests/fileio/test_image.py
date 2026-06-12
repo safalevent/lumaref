@@ -87,6 +87,41 @@ def test_load_pil_from_source_loads_from_existing_web_url(view, imgdata3x3):
 
 
 @httpretty.activate
+def test_load_pil_from_source_web_url_gif(view):
+    from PIL import Image
+    from io import BytesIO
+    frames = [
+        Image.new("RGB", (10, 10), (255, 0, 0)),
+        Image.new("RGB", (10, 10), (0, 255, 0)),
+    ]
+    gif_buf = BytesIO()
+    frames[0].save(
+        gif_buf,
+        save_all=True,
+        append_images=frames[1:],
+        format="GIF",
+        loop=0,
+        duration=100,
+    )
+    gif_data = gif_buf.getvalue()
+
+    url = "http://example.com/anim.gif"
+    httpretty.register_uri(
+        httpretty.GET,
+        url,
+        body=gif_data,
+    )
+    img, filename = load_pil_from_source(QtCore.QUrl(url))
+    assert img is not None
+    assert img.format == "GIF"
+    assert getattr(img, "is_animated", False) is True
+    assert getattr(img, "n_frames", 1) == 2
+    assert hasattr(img, "custom_raw_bytes")
+    assert len(img.custom_raw_bytes) == len(gif_data)
+    assert filename == url
+
+
+@httpretty.activate
 def test_load_pil_from_source_loads_from_existing_web_url_non_ascii(view, imgdata3x3):
     url = "http://example.com/föö.png"
     httpretty.register_uri(
@@ -110,3 +145,28 @@ def test_load_pil_from_source_loads_from_web_url_errors(view):
     img, filename = load_pil_from_source(QtCore.QUrl(url))
     assert img is None
     assert filename == url
+
+
+def test_load_pil_animated_gif(qapp, tmp_path):
+    from PIL import Image
+    frames = [
+        Image.new("RGB", (10, 10), (255, 0, 0)),
+        Image.new("RGB", (10, 10), (0, 255, 0)),
+    ]
+    gif_file = tmp_path / "test_anim.gif"
+    frames[0].save(
+        gif_file,
+        save_all=True,
+        append_images=frames[1:],
+        format="GIF",
+        loop=0,
+        duration=100,
+    )
+
+    img = load_pil(gif_file)
+    assert img is not None
+    assert img.format == "GIF"
+    assert getattr(img, "is_animated", False) is True
+    assert getattr(img, "n_frames", 1) == 2
+    assert hasattr(img, "custom_raw_bytes")
+    assert len(img.custom_raw_bytes) > 0

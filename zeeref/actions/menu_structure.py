@@ -88,6 +88,8 @@ menu_structure = [
         "items": [
             "change_opacity",
             MENU_SEPARATOR,
+            "gif_reverse",
+            MENU_SEPARATOR,
             "sample_color",
         ],
     },

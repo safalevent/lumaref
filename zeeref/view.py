@@ -461,6 +461,17 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         )
         widgets.ChangeOpacityDialog(self, images, self.undo_stack)
 
+    def on_action_gif_reverse(self, checked: bool) -> None:
+        from zeeref.items import ZeePixmapItem
+        selected = self.scene.selectedItems(user_only=True)
+        if len(selected) == 1 and isinstance(selected[0], ZeePixmapItem) and selected[0]._is_gif:
+            selected[0].toggle_gif_reverse()
+            # Sync checkbox state to actual item state
+            from zeeref.actions.actions import actions
+            action = actions.get("gif_reverse")
+            if action and action.qaction:
+                action.qaction.setChecked(selected[0]._gif_reversed)
+
     def on_action_crop(self) -> None:
         self.scene.crop_items()
 
@@ -1229,6 +1240,30 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
 
         img = clipboard.image()
         if not img.isNull():
+            # Before inserting as a flat image, check if the clipboard also
+            # carries a source URL pointing to a GIF (e.g. copied from a browser).
+            # Firefox sets text/x-moz-url; Chrome sets text/html with an <img src=>.
+            gif_url: str | None = None
+            for mime_type in (b"text/x-moz-url", b"text/x-moz-url-data"):
+                raw_url = mime.data(mime_type.decode())
+                if raw_url:
+                    candidate = raw_url.data().decode("utf-16-le", errors="ignore").split("\n")[0].strip()
+                    if candidate.lower().endswith(".gif"):
+                        gif_url = candidate
+                        break
+            if gif_url is None:
+                # Also check if text on clipboard is a GIF URL (drag from browser address bar)
+                txt = clipboard.text()
+                if txt and txt.strip().lower().endswith(".gif") and txt.strip().startswith("http"):
+                    gif_url = txt.strip()
+
+            if gif_url:
+                logger.debug(f"Clipboard has GIF source URL: {gif_url}")
+                from PyQt6.QtCore import QUrl
+                viewport_pos = self.mapFromGlobal(self.cursor().pos())
+                self.do_insert_images([QUrl(gif_url)], viewport_pos)
+                return
+
             self.undo_stack.beginMacro("Paste Image")
             self.run_async(
                 fileio.insert_image_from_clipboard,
@@ -1263,6 +1298,21 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         self.actiongroup_set_enabled(
             "active_when_single_image", self.scene.has_single_image_selection()
         )
+
+        # Enable GIF reverse action only when a single animated GIF is selected
+        from zeeref.items import ZeePixmapItem
+        selected = self.scene.selectedItems(user_only=True)
+        is_gif_selected = (
+            len(selected) == 1
+            and isinstance(selected[0], ZeePixmapItem)
+            and selected[0]._is_gif
+        )
+        self.actiongroup_set_enabled("active_when_gif_selected", is_gif_selected)
+        if is_gif_selected:
+            from zeeref.actions.actions import actions
+            action = actions.get("gif_reverse")
+            if action and action.qaction:
+                action.qaction.setChecked(selected[0]._gif_reversed)
 
         self.require_viewport().repaint()
 
