@@ -1691,3 +1691,51 @@ def test_drop_when_img(view, imgfilename3x3):
     view.dropEvent(event)
     assert len(view.scene.user_items()) == 1
     assert view.scene.user_items()[0].isSelected() is True
+
+
+def test_on_action_set_brush_color(view):
+    with patch("PyQt6.QtWidgets.QColorDialog.getColor") as mock_get_color:
+        # User cancels dialog
+        mock_get_color.return_value = QtGui.QColor()
+        initial_color = view.draw_brush_color.copy()
+        view.on_action_set_brush_color()
+        assert view.draw_brush_color == initial_color
+
+        # User chooses a color
+        mock_get_color.return_value = QtGui.QColor(100, 150, 200, 120)
+        view.on_action_set_brush_color()
+        assert view.draw_brush_color == [100, 150, 200, 120]
+
+
+def test_on_action_set_brush_size(view):
+    with patch("PyQt6.QtWidgets.QInputDialog.getInt") as mock_get_int:
+        # User cancels
+        mock_get_int.return_value = (50, False)
+        initial_size = view.draw_brush_size
+        view.on_action_set_brush_size()
+        assert view.draw_brush_size == initial_size
+
+        # User accepts
+        mock_get_int.return_value = (42, True)
+        view.on_action_set_brush_size()
+        assert view.draw_brush_size == 42.0
+
+
+def test_open_zref_and_enter_draw_mode(view):
+    test_file = Path("D:/Programs/python/GodRef/test.zref")
+    view.open_from_file(test_file)
+    view.enter_draw_mode()
+
+
+def test_press_d_shortcut(view):
+    # Simulate pressing "D" shortcut key
+    event = QtGui.QKeyEvent(
+        QtCore.QEvent.Type.KeyPress,
+        Qt.Key.Key_D,
+        Qt.KeyboardModifier.NoModifier,
+        "d",
+    )
+    view.keyPressEvent(event)
+
+
+

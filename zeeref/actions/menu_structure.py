@@ -50,7 +50,14 @@ menu_structure = [
             "show_titlebar",
         ],
     },
-    "draw_mode",
+    {
+        "menu": "&Drawing",
+        "items": [
+            "draw_mode",
+            "set_brush_color",
+            "set_brush_size",
+        ],
+    },
     "insert_text",
     {
         "menu": "&Transform",

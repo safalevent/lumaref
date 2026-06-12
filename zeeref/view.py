@@ -119,8 +119,8 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         self.active_mode: int | None = None
         self.draw_item: ZeePathItem | None = None
         self.draw_current_stroke: dict[str, Any] | None = None
-        self.draw_brush_size: float = 20.0
-        self.draw_brush_color: list[int] = [200, 200, 200, 255]
+        self.draw_brush_size: float = 12.0
+        self.draw_brush_color: list[int] = [240, 242, 245, 50]
         self.event_start: QtCore.QPointF = QtCore.QPointF()
         self.event_anchor: QtCore.QPointF = QtCore.QPointF()
         self.event_inverted: bool = False
@@ -1094,6 +1094,34 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         else:
             if self.active_mode == self.DRAW_MODE:
                 self.exit_draw_mode(commit=True)
+
+    def on_action_set_brush_color(self) -> None:
+        current = QtGui.QColor(*self.draw_brush_color)
+        color = QtWidgets.QColorDialog.getColor(
+            current,
+            self,
+            "Select Brush Color",
+            QtWidgets.QColorDialog.ColorDialogOption.ShowAlphaChannel,
+        )
+        if color.isValid():
+            self.draw_brush_color = [
+                color.red(),
+                color.green(),
+                color.blue(),
+                color.alpha(),
+            ]
+
+    def on_action_set_brush_size(self) -> None:
+        size, ok = QtWidgets.QInputDialog.getInt(
+            self,
+            "Brush Size",
+            "Size (px):",
+            int(self.draw_brush_size),
+            1,
+            500,
+        )
+        if ok:
+            self.draw_brush_size = float(size)
 
     def enter_draw_mode(self) -> None:
         self.cancel_active_modes()
