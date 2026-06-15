@@ -641,11 +641,18 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
         if not self._gif_bytes or self._gif_frames:
             return  # Already extracted or nothing to extract
         from io import BytesIO
+        frames: list[tuple[QtGui.QPixmap, int]] = []
         try:
             pil_gif = Image.open(BytesIO(self._gif_bytes))
-            frames: list[tuple[QtGui.QPixmap, int]] = []
             while True:
-                duration = pil_gif.info.get("duration", 100)
+                duration_val = pil_gif.info.get("duration")
+                if duration_val is None:
+                    duration = 100
+                else:
+                    try:
+                        duration = int(duration_val)
+                    except (ValueError, TypeError):
+                        duration = 100
                 frame_rgba = pil_gif.convert("RGBA")
                 data = frame_rgba.tobytes()
                 qimg = QtGui.QImage(
@@ -655,7 +662,7 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
                     frame_rgba.width * 4,
                     QtGui.QImage.Format.Format_RGBA8888,
                 )
-                frames.append((QtGui.QPixmap.fromImage(qimg.copy()), int(duration)))
+                frames.append((QtGui.QPixmap.fromImage(qimg.copy()), duration))
                 pil_gif.seek(pil_gif.tell() + 1)
         except EOFError:
             pass
@@ -669,22 +676,25 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
         if not self._gif_bytes:
             logger.debug("[_setup_movie] No GIF bytes found")
             return
-        if self._gif_reversed and self._gif_frames:
+        if self._gif_reversed:
             logger.debug("[_setup_movie] Playing reversed")
             self._play_reversed()
-        else:
-            logger.debug("[_setup_movie] Setting up QMovie")
-            # Keep QByteArray alive for the lifetime of the movie.
-            # If _movie_ba goes out of scope, QBuffer reads freed memory and freezes.
-            self._movie_ba = QtCore.QByteArray(self._gif_bytes)
-            self._movie_buffer = QtCore.QBuffer(self._movie_ba)
-            self._movie_buffer.open(QtCore.QIODevice.OpenModeFlag.ReadOnly)
-            self._movie = QtGui.QMovie()
-            self._movie.setDevice(self._movie_buffer)
-            self._movie.frameChanged.connect(self._on_frame_changed)
-            logger.debug(f"[_setup_movie] QMovie is valid: {self._movie.isValid()}")
-            self._movie.start()
-            logger.debug(f"[_setup_movie] QMovie started: state={self._movie.state()}")
+            if self._gif_frames:
+                return
+            logger.warning("[_setup_movie] Failed to extract frames for reverse playback, falling back to QMovie")
+
+        logger.debug("[_setup_movie] Setting up QMovie")
+        # Keep QByteArray alive for the lifetime of the movie.
+        # If _movie_ba goes out of scope, QBuffer reads freed memory and freezes.
+        self._movie_ba = QtCore.QByteArray(self._gif_bytes)
+        self._movie_buffer = QtCore.QBuffer(self._movie_ba)
+        self._movie_buffer.open(QtCore.QIODevice.OpenModeFlag.ReadOnly)
+        self._movie = QtGui.QMovie()
+        self._movie.setDevice(self._movie_buffer)
+        self._movie.frameChanged.connect(self._on_frame_changed)
+        logger.debug(f"[_setup_movie] QMovie is valid: {self._movie.isValid()}")
+        self._movie.start()
+        logger.debug(f"[_setup_movie] QMovie started: state={self._movie.state()}")
 
     def _on_frame_changed(self, _frame: int) -> None:
         """Update pixmap when QMovie advances a frame."""

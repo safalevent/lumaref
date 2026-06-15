@@ -849,6 +849,52 @@ def test_create_copy_gif(qapp):
         mock_load.assert_called_once()
 
 
+def test_gif_reverse(qapp):
+    from io import BytesIO
+    from PIL import Image
+
+    # Create a simple animated GIF with 3 frames (Red, Green, Blue)
+    frames = []
+    for color in [(255, 0, 0), (0, 255, 0), (0, 0, 255)]:
+        img = Image.new("RGBA", (10, 10), color)
+        frames.append(img)
+    bio = BytesIO()
+    frames[0].save(bio, format="GIF", save_all=True, append_images=frames[1:], duration=120, loop=0)
+    gif_bytes = bio.getvalue()
+
+    item = ZeePixmapItem(QtGui.QImage(), "test.gif")
+    item._is_gif = True
+    item._gif_bytes = gif_bytes
+
+    assert item._gif_reversed is False
+    assert not item._gif_frames
+
+    # Setup normal play
+    item._setup_movie()
+    assert item._movie is not None
+    assert item._gif_timer is None
+
+    # Toggle to reverse play
+    item.toggle_gif_reverse()
+    assert item._gif_reversed is True
+    assert len(item._gif_frames) == 3
+    assert item._movie is None
+    assert item._gif_timer is not None
+    assert item._gif_frame_idx == 1  # Starts at last frame (2) but is immediately decremented to 1 in first step
+
+
+def test_gif_reverse_fallback_on_corrupt_bytes(qapp):
+    item = ZeePixmapItem(QtGui.QImage(), "corrupt.gif")
+    item._is_gif = True
+    item._gif_bytes = b"corrupt gif data"
+    item._gif_reversed = True
+
+    # If reverse setup fails to extract frames, it should fallback to QMovie setup
+    item._setup_movie()
+    assert item._gif_frames == []
+    assert item._movie is not None
+
+
 def test_ensure_crop_box_is_inside(qapp, item):
     item.crop_temp = QtCore.QRectF(2, 2, 4, 4)
     item._image_width = 10
