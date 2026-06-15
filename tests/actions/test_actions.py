@@ -152,3 +152,10 @@ def test_action_menu_path_recent_files():
 def test_action_menu_path_recent_files_in_submenu():
     action = Action(id="baz", text="Foo", menu_id="_build_recent_files")
     assert action.menu_path == ["Foo", "Bar"]
+
+
+def test_set_brush_color_shortcut():
+    from zeeref.actions.actions import actions
+    action = actions["set_brush_color"]
+    assert "C" in action.shortcuts
+

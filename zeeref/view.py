@@ -97,6 +97,9 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         self.welcome_overlay: widgets.welcome_overlay.WelcomeOverlay = (
             widgets.welcome_overlay.WelcomeOverlay(vp)
         )
+        self._stroke_size_overlay: widgets.StrokeSizeOverlay = (
+            widgets.StrokeSizeOverlay(vp)
+        )
         self.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         self.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
         self.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
@@ -1210,6 +1213,7 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         self.require_viewport().unsetCursor()
         self.setMouseTracking(False)
         self.active_mode = None
+        self.settings.setValue("Draw/brush_size", self.draw_brush_size)
         if self.draw_item:
             if commit and self.draw_item.strokes:
                 self.scene.removeItem(self.draw_item)
@@ -1532,6 +1536,11 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
                 self.draw_brush_size = min(200.0, self.draw_brush_size + 2.0)
             elif delta < 0:
                 self.draw_brush_size = max(1.0, self.draw_brush_size - 2.0)
+
+            if hasattr(self, "_stroke_size_overlay"):
+                self._stroke_size_overlay.update_values(self.draw_brush_size, self.draw_brush_color)
+                self._stroke_size_overlay.show_overlay()
+
             event.accept()
             return
 
@@ -1608,7 +1617,7 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
                 pressure = self._tablet_pressure
                 self.draw_current_stroke = {
                     "color": self.draw_brush_color,
-                    "base_size": self.draw_brush_size,
+                    "base_size": self.draw_brush_size / self.get_scale(),
                     "points": [{"x": pos.x(), "y": pos.y(), "pressure": pressure}],
                 }
                 self.draw_item.temp_stroke = self.draw_current_stroke
@@ -1754,6 +1763,12 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         super().resizeEvent(event)
         self.recalc_scene_rect()
         self.welcome_overlay.resize(self.size())
+        if hasattr(self, "_stroke_size_overlay") and self._stroke_size_overlay.isVisible():
+            vp = self.viewport()
+            if vp:
+                self._stroke_size_overlay.adjustSize()
+                x = int((vp.width() - self._stroke_size_overlay.width()) / 2)
+                self._stroke_size_overlay.move(x, 20)
         self._mark_tiles_dirty()
 
     def keyPressEvent(self, event: QtGui.QKeyEvent | None) -> None:

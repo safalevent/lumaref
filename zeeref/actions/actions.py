@@ -188,6 +188,7 @@ actions = ActionList(
         Action(
             id="set_brush_color",
             text="Brush &Color...",
+            shortcuts=["C"],
             callback="on_action_set_brush_color",
         ),
         Action(

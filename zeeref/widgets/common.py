@@ -306,3 +306,131 @@ class ExportImagesFileExistsDialog(QtWidgets.QDialog):
         for value, btn in self.radio_buttons.items():
             if btn.isChecked():
                 return value
+
+
+class BrushPreviewWidget(QtWidgets.QWidget):
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
+        super().__init__(parent)
+        self.brush_size: float = 1.0
+        self.brush_color: list[int] = [255, 255, 255, 255]
+        self.setFixedSize(100, 80)
+
+    def update_brush(self, size: float, color: list[int]) -> None:
+        self.brush_size = size
+        self.brush_color = color
+        self.update()
+
+    def paintEvent(self, event: Optional[QtGui.QPaintEvent]) -> None:
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+
+        # Draw actual size capped at a maximum of 70px to fit well in the overlay
+        max_display_size = 70.0
+        display_size = min(self.brush_size, max_display_size)
+        display_size = max(display_size, 2.0)
+        radius = display_size / 2.0
+
+        cx = self.width() / 2.0
+        cy = self.height() / 2.0
+
+        qcolor = QtGui.QColor(*self.brush_color)
+        painter.setBrush(QtGui.QBrush(qcolor))
+        # Draw a subtle outline for visual contrast
+        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 80), 1.0))
+        painter.drawEllipse(QtCore.QPointF(cx, cy), radius, radius)
+
+
+class StrokeSizeOverlay(QtWidgets.QWidget):
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        self.opacity_effect = QtWidgets.QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self.opacity_effect)
+        self.opacity_effect.setOpacity(0.0)
+
+        # Layout setup
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(15, 12, 15, 12)
+        layout.setSpacing(6)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Text label
+        self.label = QtWidgets.QLabel("", self)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label.setStyleSheet(
+            "color: #ffffff;"
+            "font-size: 13px;"
+            "font-weight: bold;"
+            "font-family: 'Segoe UI', Arial, sans-serif;"
+        )
+        layout.addWidget(self.label)
+
+        # Brush size/color preview widget
+        self.preview = BrushPreviewWidget(self)
+        layout.addWidget(self.preview)
+
+        # Visibility timers and animations
+        self.timer = QtCore.QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self.fade_out)
+
+        self.animation = QtCore.QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.animation.setDuration(150)
+
+        self.hide()
+
+    def update_values(self, size: float, color: list[int]) -> None:
+        self.label.setText(f"Stroke Size: {size:.1f} px")
+        self.preview.update_brush(size, color)
+
+    def show_overlay(self) -> None:
+        self.timer.stop()
+        self.animation.stop()
+        self.show()
+        self.raise_()
+
+        parent = self.parentWidget()
+        if parent:
+            self.adjustSize()
+            x = int((parent.width() - self.width()) / 2)
+            y = 20
+            self.move(x, y)
+
+        self.animation.setStartValue(self.opacity_effect.opacity())
+        self.animation.setEndValue(1.0)
+        self.animation.start()
+
+        self.timer.start(1000)
+
+    def fade_out(self) -> None:
+        self.animation.stop()
+        self.animation.setStartValue(self.opacity_effect.opacity())
+        self.animation.setEndValue(0.0)
+        try:
+            self.animation.finished.disconnect()
+        except TypeError:
+            pass
+        self.animation.finished.connect(self.on_fade_out_finished)
+        self.animation.start()
+
+    def on_fade_out_finished(self) -> None:
+        if self.opacity_effect.opacity() == 0.0:
+            self.hide()
+
+    def paintEvent(self, event: Optional[QtGui.QPaintEvent]) -> None:
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+
+        # Dark glassmorphic background card
+        bg_color = QtGui.QColor(30, 30, 30, 220)
+        border_color = QtGui.QColor(255, 255, 255, 30)
+
+        painter.setBrush(QtGui.QBrush(bg_color))
+        painter.setPen(QtGui.QPen(border_color, 1.0))
+
+        rect = self.rect()
+        draw_rect = QtCore.QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5)
+        painter.drawRoundedRect(draw_rect, 8.0, 8.0)
+

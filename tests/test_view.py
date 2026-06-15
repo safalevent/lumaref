@@ -1978,5 +1978,52 @@ def test_mouse_press_event_crop_mode_right_click(view):
     assert event.isAccepted()
 
 
+def test_wheel_event_brush_size_change_during_draw(view):
+    view.active_mode = view.DRAW_MODE
+    view.draw_brush_size = 10.0
+    view.draw_brush_color = [255, 0, 0, 255]
+
+    event = MagicMock()
+    event.angleDelta.return_value = QtCore.QPoint(0, 120)
+
+    view.wheelEvent(event)
+    assert view.draw_brush_size == 12.0
+    assert view._stroke_size_overlay.isVisible()
+    event.accept.assert_called_once()
+
+    event2 = MagicMock()
+    event2.angleDelta.return_value = QtCore.QPoint(0, -120)
+    view.wheelEvent(event2)
+    assert view.draw_brush_size == 10.0
+    event2.accept.assert_called_once()
+
+
+def test_draw_stroke_size_zoom_independent(view):
+    view.active_mode = view.DRAW_MODE
+    view.draw_brush_size = 12.0
+    view.draw_item = MagicMock()
+
+    # 1. Scale = 1.0
+    view.setTransform(QtGui.QTransform())
+    event = MagicMock()
+    event.button.return_value = Qt.MouseButton.LeftButton
+    event.pos.return_value = QtCore.QPoint(50, 50)
+    view.mousePressEvent(event)
+
+    assert view.draw_current_stroke["base_size"] == 12.0
+
+    # 2. Scale = 2.0
+    view.setTransform(QtGui.QTransform())
+    view.scale(2.0, 2.0)
+    event2 = MagicMock()
+    event2.button.return_value = Qt.MouseButton.LeftButton
+    event2.pos.return_value = QtCore.QPoint(50, 50)
+    view.mousePressEvent(event2)
+
+    assert view.draw_current_stroke["base_size"] == 6.0
+
+
+
+
 
 

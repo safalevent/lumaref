@@ -29,6 +29,7 @@ from zeeref.widgets.common import (
     HelpDialog,
     SampleColorWidget,
     SceneToPixmapExporterDialog,
+    StrokeSizeOverlay,
 )
 from zeeref.widgets.debuglog import DebugLogDialog
 from zeeref.widgets.color_gamut import GamutDialog
@@ -43,4 +44,5 @@ __all__ = [
     "SampleColorWidget",
     "SceneToPixmapExporterDialog",
     "GamutDialog",
+    "StrokeSizeOverlay",
 ]
