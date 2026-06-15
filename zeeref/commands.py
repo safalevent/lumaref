@@ -40,8 +40,11 @@ class InsertItems(QtGui.QUndoCommand):
             self.scene.addItem(item)
             item.setSelected(True)
             item.bring_to_front()
+            self.scene.update(item.sceneBoundingRect())
 
     def undo(self):
+        for item in self.items:
+            self.scene.update(item.sceneBoundingRect())
         self.scene.deselect_all_items()
         for item in self.items:
             self.scene.removeItem(item)
@@ -58,6 +61,8 @@ class DeleteItems(QtGui.QUndoCommand):
 
     def redo(self):
         for item in self.items:
+            self.scene.update(item.sceneBoundingRect())
+        for item in self.items:
             self.scene.removeItem(item)
 
     def undo(self):
@@ -65,6 +70,7 @@ class DeleteItems(QtGui.QUndoCommand):
         for item in self.items:
             item.setSelected(True)
             self.scene.addItem(item)
+            self.scene.update(item.sceneBoundingRect())
 
 
 class MoveItemsBy(QtGui.QUndoCommand):

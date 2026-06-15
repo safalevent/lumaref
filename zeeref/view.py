@@ -1217,6 +1217,7 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         self.active_mode = None
         self.settings.setValue("Draw/brush_size", self.draw_brush_size)
         if self.draw_item:
+            self.scene.update(self.draw_item.sceneBoundingRect())
             if commit and self.draw_item.strokes:
                 self.scene.removeItem(self.draw_item)
                 self.undo_stack.push(commands.InsertItems(self.scene, [self.draw_item]))
