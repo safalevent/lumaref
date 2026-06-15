@@ -1589,7 +1589,20 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         assert event is not None
 
         if self.active_mode == self.DRAW_MODE:
-            if event.button() == Qt.MouseButton.LeftButton:
+            action, inverted = self.keyboard_settings.mouse_action_for_event(event)
+            if action == "zoom":
+                self.active_mode = self.ZOOM_MODE
+                self._zoom_restore_draw_mode = True
+                self.event_start = event.position()
+                self.event_anchor = event.position()
+                self.event_inverted = inverted
+            elif action == "pan":
+                logger.trace("Begin pan during draw")
+                self.active_mode = self.PAN_MODE
+                self._pan_restore_draw_mode = True
+                self.event_start = event.position()
+                self.require_viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
+            elif event.button() == Qt.MouseButton.LeftButton:
                 assert self.draw_item is not None
                 pos = self.mapToScene(event.pos())
                 pressure = self._tablet_pressure
@@ -1716,11 +1729,21 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         if self.active_mode == self.PAN_MODE:
             logger.trace("End pan")
             self.require_viewport().unsetCursor()
-            self.active_mode = None
+            if getattr(self, "_pan_restore_draw_mode", False):
+                self._pan_restore_draw_mode = False
+                self.active_mode = self.DRAW_MODE
+                self.require_viewport().setCursor(Qt.CursorShape.CrossCursor)
+            else:
+                self.active_mode = None
             event.accept()
             return
         if self.active_mode == self.ZOOM_MODE:
-            self.active_mode = None
+            if getattr(self, "_zoom_restore_draw_mode", False):
+                self._zoom_restore_draw_mode = False
+                self.active_mode = self.DRAW_MODE
+                self.require_viewport().setCursor(Qt.CursorShape.CrossCursor)
+            else:
+                self.active_mode = None
             event.accept()
             return
         if self.mouseReleaseEventMainControls(event):

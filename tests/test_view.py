@@ -1837,6 +1837,85 @@ def test_draw_undo_draw_undo(view):
     assert len(view.draw_item.strokes) == 0
 
 
+@patch("PyQt6.QtWidgets.QGraphicsView.mousePressEvent")
+@patch("zeeref.view.ZeeGraphicsView.pan")
+def test_draw_mode_middle_click_pan(pan_mock, mouse_event_mock, view):
+    view.enter_draw_mode()
+    assert view.active_mode == view.DRAW_MODE
+
+    # Press middle button (pan)
+    press_event = MagicMock()
+    press_event.position.return_value = QtCore.QPointF(10.0, 20.0)
+    press_event.button.return_value = Qt.MouseButton.MiddleButton
+    press_event.modifiers.return_value = Qt.KeyboardModifier.NoModifier
+
+    view.mousePressEvent(press_event)
+
+    # We should have transitioned to PAN_MODE and recorded the start position
+    assert view.active_mode == view.PAN_MODE
+    assert view.event_start == QtCore.QPointF(10.0, 20.0)
+    assert getattr(view, "_pan_restore_draw_mode", False) is True
+    press_event.accept.assert_called_once()
+
+    # Move event
+    move_event = MagicMock()
+    move_event.position.return_value = QtCore.QPointF(15.0, 25.0)
+    view.mouseMoveEvent(move_event)
+
+    # It should call pan with delta (event_start - current_position) = (10, 20) - (15, 25) = (-5, -5)
+    pan_mock.assert_called_once_with(QtCore.QPointF(-5.0, -5.0))
+    move_event.accept.assert_called_once()
+
+    # Release event
+    release_event = MagicMock()
+    release_event.button.return_value = Qt.MouseButton.MiddleButton
+    view.mouseReleaseEvent(release_event)
+
+    # It should have restored active_mode to DRAW_MODE
+    assert view.active_mode == view.DRAW_MODE
+    assert getattr(view, "_pan_restore_draw_mode", False) is False
+    release_event.accept.assert_called_once()
+
+
+@patch("PyQt6.QtWidgets.QGraphicsView.mousePressEvent")
+@patch("zeeref.view.ZeeGraphicsView.zoom")
+def test_draw_mode_ctrl_middle_click_zoom(zoom_mock, mouse_event_mock, view):
+    view.enter_draw_mode()
+    assert view.active_mode == view.DRAW_MODE
+
+    # Press Ctrl + Middle button (zoom)
+    press_event = MagicMock()
+    press_event.position.return_value = QtCore.QPointF(10.0, 20.0)
+    press_event.button.return_value = Qt.MouseButton.MiddleButton
+    press_event.modifiers.return_value = Qt.KeyboardModifier.ControlModifier
+
+    view.mousePressEvent(press_event)
+
+    assert view.active_mode == view.ZOOM_MODE
+    assert getattr(view, "_zoom_restore_draw_mode", False) is True
+    press_event.accept.assert_called_once()
+
+    # Move event
+    move_event = MagicMock()
+    move_event.position.return_value = QtCore.QPointF(10.0, 18.0)
+    view.mouseMoveEvent(move_event)
+
+    # zoom delta = (start - pos).y() = 20 - 18 = 2
+    # call: zoom(delta * 20, event_anchor) -> zoom(40, QPointF(10, 20))
+    zoom_mock.assert_called_once_with(40.0, QtCore.QPointF(10.0, 20.0))
+    move_event.accept.assert_called_once()
+
+    # Release event
+    release_event = MagicMock()
+    release_event.button.return_value = Qt.MouseButton.MiddleButton
+    view.mouseReleaseEvent(release_event)
+
+    assert view.active_mode == view.DRAW_MODE
+    assert getattr(view, "_zoom_restore_draw_mode", False) is False
+    release_event.accept.assert_called_once()
+
+
+
 @patch("zeeref.view.ZeeGraphicsView.do_insert_images")
 @patch("PyQt6.QtGui.QClipboard.mimeData")
 def test_on_action_paste_multiple_remote_urls(mimedata_mock, do_insert_mock, view):
