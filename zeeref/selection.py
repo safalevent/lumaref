@@ -109,6 +109,133 @@ def get_parent_candidate(item: BaseItemMixin, scene: Any) -> BaseItemMixin | Non
     return candidates[-1]
 
 
+class ZeeLockAnimationItem(QtWidgets.QGraphicsObject):
+    _progress: float = 0.0
+
+    def __init__(self, item: Any, parent_item: Any = None) -> None:
+        super().__init__()
+        self.item = item
+        self.parent_item = parent_item
+        self.setZValue(1e9)
+        
+        self.anim = QtCore.QVariantAnimation(self)
+        self.anim.setDuration(500)
+        self.anim.setStartValue(0.0)
+        self.anim.setEndValue(1.0)
+        self.anim.valueChanged.connect(self.on_value_changed)
+        self.anim.finished.connect(self.on_finished)
+        self.anim.start()
+
+    def on_value_changed(self, value: float) -> None:
+        self._progress = value
+        self.update()
+
+    def on_finished(self) -> None:
+        scene = self.scene()
+        if scene:
+            scene.removeItem(self)
+
+    def boundingRect(self) -> QtCore.QRectF:
+        if self.parent_item:
+            rect = self.item.sceneBoundingRect().united(self.parent_item.sceneBoundingRect())
+            return rect.adjusted(-50, -50, 50, 50)
+        else:
+            return self.item.sceneBoundingRect().adjusted(-50, -50, 50, 50)
+
+    def draw_screw(self, painter: QtGui.QPainter, center: QtCore.QPointF, angle: float, sc: float, opacity: float, radius: float) -> None:
+        painter.save()
+        painter.translate(center)
+        painter.rotate(angle)
+        painter.scale(sc, sc)
+        
+        painter.setOpacity(opacity)
+        
+        painter.setPen(QtGui.QPen(QtGui.QColor(100, 100, 100), radius * 0.15))
+        painter.setBrush(QtGui.QColor(180, 180, 180))
+        painter.drawEllipse(QtCore.QRectF(-radius, -radius, radius * 2, radius * 2))
+        
+        painter.drawLine(QtCore.QLineF(-radius * 0.6, 0, radius * 0.6, 0))
+        painter.drawLine(QtCore.QLineF(0, -radius * 0.6, 0, radius * 0.6))
+        
+        painter.restore()
+
+    def paint(
+        self,
+        painter: QtGui.QPainter,
+        option: QtWidgets.QStyleOptionGraphicsItem | None,
+        widget: QtWidgets.QWidget | None = None,
+    ) -> None:
+        if not painter:
+            return
+
+        view = self.item.zee_view()
+        view_scale = view.get_scale() if view else 1.0
+        
+        # Always draw screw animation on the locked item
+        rect = self.item.bounding_rect_unselected()
+        corners = [
+            self.item.mapToScene(rect.topLeft()),
+            self.item.mapToScene(rect.topRight()),
+            self.item.mapToScene(rect.bottomLeft()),
+            self.item.mapToScene(rect.bottomRight())
+        ]
+        
+        angle = self._progress * 720.0
+        sc = 2.0 - self._progress
+        opacity_screws = min(self._progress / 0.2, 1.0) * (1.0 - self._progress)
+        
+        # Screws are smaller now (base radius 4.0 / view_scale)
+        radius = 4.0 / view_scale
+        
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        if opacity_screws > 0:
+            for corner in corners:
+                self.draw_screw(painter, corner, angle, sc, opacity_screws, radius)
+        painter.restore()
+        
+        # If parented, also draw connector line with 2x speed pulse (4x slower than 8x), playing exactly once (so it disappears when self._progress > 0.5)
+        if self.parent_item:
+            ca = self.item.sceneBoundingRect().center()
+            cb = self.parent_item.sceneBoundingRect().center()
+            
+            # Since pulse plays once at 2x speed, it finishes when self._progress reaches 0.5.
+            # We fade it out based on its own progress (which goes from 0.0 to 1.0 as self._progress goes 0.0 to 0.5)
+            opacity_line = max(0.0, 1.0 - self._progress * 2.0)
+            if opacity_line > 0:
+                painter.save()
+                painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+                
+                # Glow line
+                pen_glow = QtGui.QPen(QtGui.QColor(0, 150, 255, int(120 * opacity_line)))
+                pen_glow.setWidthF(8.0 / view_scale)
+                pen_glow.setCapStyle(Qt.PenCapStyle.RoundCap)
+                painter.setPen(pen_glow)
+                painter.drawLine(cb, ca)
+                
+                # Core line
+                pen_core = QtGui.QPen(QtGui.QColor(255, 255, 255, int(255 * opacity_line)))
+                pen_core.setWidthF(2.0 / view_scale)
+                pen_core.setCapStyle(Qt.PenCapStyle.RoundCap)
+                painter.setPen(pen_core)
+                painter.drawLine(cb, ca)
+                
+                # Energy pulse (progress goes from 0.0 to 1.0 exactly once)
+                pulse_progress = self._progress * 2.0
+                pt = cb + (ca - cb) * pulse_progress
+                painter.setPen(Qt.PenStyle.NoPen)
+                
+                painter.setBrush(QtGui.QColor(0, 150, 255, int(180 * opacity_line)))
+                r_glow = 15.0 / view_scale
+                painter.drawEllipse(pt, r_glow, r_glow)
+                
+                painter.setBrush(QtGui.QColor(255, 255, 255, int(255 * opacity_line)))
+                r_core = 5.0 / view_scale
+                painter.drawEllipse(pt, r_core, r_core)
+                
+                painter.restore()
+
+
 class BaseItemMixin(_BaseItemBase):
     _is_locked: bool = False
     locked_to: BaseItemMixin | None = None
@@ -146,6 +273,10 @@ class BaseItemMixin(_BaseItemBase):
                     self.locked_rel_scale = self.scale() / parent.scale() if parent.scale() != 0 else 1.0
                     self.locked_rel_rotation = self.rotation() - parent.rotation()
                     self.locked_rel_flip = self.flip() / parent.flip() if parent.flip() != 0 else 1.0
+                
+                # Start locking animation
+                anim = ZeeLockAnimationItem(self, parent)
+                scene.addItem(anim)
         else:
             parent = getattr(self, "locked_to", None)
             if parent:

@@ -481,6 +481,51 @@ def test_hierarchical_lock_save_restore(qapp, scene):
     assert new_a.pos() == QtCore.QPointF(60, 60)
 
 
+def test_lock_animations_instantiated(qapp, scene):
+    # Test scene locking animation
+    item_a = ZeePixmapItem(QtGui.QImage(10, 10, QtGui.QImage.Format.Format_RGB32))
+    scene.addItem(item_a)
+    item_a.setPos(10, 20)
+    
+    # Locking item_a (locked to scene, no parent candidate)
+    item_a.is_locked = True
+    
+    # There should be an instance of ZeeLockAnimationItem in the scene
+    from zeeref.selection import ZeeLockAnimationItem
+    animations = [it for it in scene.items() if isinstance(it, ZeeLockAnimationItem)]
+    assert len(animations) == 1
+    anim = animations[0]
+    assert anim.item is item_a
+    assert anim.parent_item is None
+    
+    # Cleanup / finish animation manually to check it removes itself
+    anim.on_finished()
+    assert anim not in scene.items()
+    
+    # Test parent connection locking animation
+    item_b = ZeePixmapItem(QtGui.QImage(30, 30, QtGui.QImage.Format.Format_RGB32))
+    scene.addItem(item_b)
+    item_b.setPos(0, 0)
+    item_a.setZValue(1.0)
+    item_b.setZValue(0.0)
+    
+    item_a.is_locked = False
+    assert not item_a.is_locked
+    
+    # Re-lock item_a (it should now lock to item_b as parent)
+    item_a.is_locked = True
+    
+    animations = [it for it in scene.items() if isinstance(it, ZeeLockAnimationItem)]
+    assert len(animations) == 1
+    anim = animations[0]
+    assert anim.item is item_a
+    assert anim.parent_item is item_b
+    
+    # Clean up animation
+    anim.on_finished()
+    assert anim not in scene.items()
+
+
 
 
 
