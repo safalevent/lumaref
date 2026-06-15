@@ -1786,9 +1786,10 @@ def test_on_action_set_brush_size(view):
 
 
 def test_open_zref_and_enter_draw_mode(view):
-    test_file = Path("D:/Programs/python/GodRef/test.zref")
-    view.open_from_file(test_file)
-    view.enter_draw_mode()
+    with patch.object(view, "run_async") as mock_run_async:
+        test_file = Path("test.zref")
+        view.open_from_file(test_file)
+        view.enter_draw_mode()
 
 
 def test_press_d_shortcut(view):

@@ -40,8 +40,26 @@ def no_modal_dialogs():
     with patch(
         "PyQt6.QtWidgets.QMessageBox.question",
         return_value=QtWidgets.QMessageBox.StandardButton.Yes,
+    ), patch(
+        "PyQt6.QtWidgets.QMessageBox.warning",
+        return_value=QtWidgets.QMessageBox.StandardButton.Ok,
+    ), patch(
+        "PyQt6.QtWidgets.QMessageBox.information",
+        return_value=QtWidgets.QMessageBox.StandardButton.Ok,
+    ), patch(
+        "PyQt6.QtWidgets.QMessageBox.critical",
+        return_value=QtWidgets.QMessageBox.StandardButton.Ok,
+    ), patch(
+        "PyQt6.QtWidgets.QMessageBox.about",
     ):
         yield
+
+
+@pytest.fixture(autouse=True)
+def cleanup_tile_cache():
+    yield
+    from zeeref.fileio.tilecache import set_tile_cache
+    set_tile_cache(None)
 
 
 @pytest.fixture(autouse=True)
