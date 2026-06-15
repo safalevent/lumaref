@@ -71,8 +71,52 @@ def with_anchor(func: Any) -> Any:
     return wrapper
 
 
+def get_parent_candidate(item: BaseItemMixin, scene: Any) -> BaseItemMixin | None:
+    items = scene.user_items()
+    try:
+        item_idx = items.index(item)
+    except ValueError:
+        return None
+
+    a_rect = item.sceneBoundingRect()
+    a_area = a_rect.width() * a_rect.height()
+    if a_area <= 0:
+        return None
+
+    candidates = []
+    for i in range(item_idx):
+        b = items[i]
+        if b is item:
+            continue
+        b_rect = b.sceneBoundingRect()
+        b_area = b_rect.width() * b_rect.height()
+
+        if b_area < 1.5 * a_area:
+            continue
+
+        intersection = a_rect.intersected(b_rect)
+        if intersection.isEmpty():
+            continue
+        inter_area = intersection.width() * intersection.height()
+        if inter_area / a_area < 0.60:
+            continue
+
+        candidates.append(b)
+
+    if not candidates:
+        return None
+
+    return candidates[-1]
+
+
 class BaseItemMixin(_BaseItemBase):
     _is_locked: bool = False
+    locked_to: BaseItemMixin | None = None
+    locked_children: list[BaseItemMixin] | None = None
+    locked_rel_pos: QtCore.QPointF | None = None
+    locked_rel_scale: float = 1.0
+    locked_rel_rotation: float = 0.0
+    locked_rel_flip: float = 1.0
 
     @property
     def is_lockable(self) -> bool:
@@ -87,6 +131,27 @@ class BaseItemMixin(_BaseItemBase):
     def is_locked(self, value: bool) -> None:
         self._is_locked = value
         self.update_locked_state()
+        if value:
+            scene = self.zee_scene()
+            if scene:
+                parent = get_parent_candidate(self, scene)
+                if parent:
+                    self.locked_to = parent
+                    if not hasattr(parent, "locked_children") or parent.locked_children is None:
+                        parent.locked_children = []
+                    if self not in parent.locked_children:
+                        parent.locked_children.append(self)
+                    
+                    self.locked_rel_pos = parent.mapFromScene(self.scenePos())
+                    self.locked_rel_scale = self.scale() / parent.scale() if parent.scale() != 0 else 1.0
+                    self.locked_rel_rotation = self.rotation() - parent.rotation()
+                    self.locked_rel_flip = self.flip() / parent.flip() if parent.flip() != 0 else 1.0
+        else:
+            parent = getattr(self, "locked_to", None)
+            if parent:
+                if hasattr(parent, "locked_children") and parent.locked_children and self in parent.locked_children:
+                    parent.locked_children.remove(self)
+                self.locked_to = None
 
     def update_locked_state(self) -> None:
         self.prepareGeometryChange()
@@ -98,6 +163,42 @@ class BaseItemMixin(_BaseItemBase):
         scene = self.zee_scene()
         if scene:
             scene.update()
+
+    def update_relative_to_parent(self) -> None:
+        parent = getattr(self, "locked_to", None)
+        if not parent:
+            return
+
+        was_locked = self._is_locked
+        self._is_locked = False
+        try:
+            self.setPos(parent.mapToScene(self.locked_rel_pos))
+            self.setScale(parent.scale() * self.locked_rel_scale)
+            self.setRotation(parent.rotation() + self.locked_rel_rotation)
+            new_flip = self.locked_rel_flip * parent.flip()
+            if self.flip() != new_flip:
+                self.setTransform(QtGui.QTransform.fromScale(new_flip, 1))
+        finally:
+            self._is_locked = was_locked
+
+    def itemChange(self, change: QtWidgets.QGraphicsItem.GraphicsItemChange, value: Any) -> Any:
+        if change in (
+            QtWidgets.QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged,
+            QtWidgets.QGraphicsItem.GraphicsItemChange.ItemTransformHasChanged,
+            QtWidgets.QGraphicsItem.GraphicsItemChange.ItemScaleHasChanged,
+            QtWidgets.QGraphicsItem.GraphicsItemChange.ItemRotationHasChanged,
+        ):
+            children = getattr(self, "locked_children", None)
+            if children:
+                for child in children:
+                    child.update_relative_to_parent()
+        elif change == QtWidgets.QGraphicsItem.GraphicsItemChange.ItemSceneChange:
+            if value is None:
+                children = getattr(self, "locked_children", None)
+                if children:
+                    for child in list(children):
+                        child.is_locked = False
+        return super().itemChange(change, value)
 
     def setPos(self, *args: Any, **kwargs: Any) -> None:
         if self._is_locked:
@@ -271,6 +372,7 @@ class SelectableMixin(BaseItemMixin):
         self.setFlags(
             QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable
             | QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            | QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
         )
 
         self.viewport_scale = 1

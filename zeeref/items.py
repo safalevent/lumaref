@@ -90,7 +90,9 @@ def create_item_from_snapshot(snap: ItemSnapshot) -> ZeeItemMixin:
         return err
 
     try:
-        return cls.from_snapshot(snap)
+        item = cls.from_snapshot(snap)
+        item._loaded_snap_data = snap.data
+        return item
     except Exception as e:
         logger.exception(f"Failed to create {snap.type} from snapshot")
         filename = snap.data.get("filename", "unknown")
@@ -470,6 +472,13 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
             d["gif_reversed"] = True
         if self.is_locked:
             d["locked"] = True
+            parent = getattr(self, "locked_to", None)
+            if parent:
+                d["locked_to"] = parent.save_id
+                d["locked_rel_pos"] = [self.locked_rel_pos.x(), self.locked_rel_pos.y()]
+                d["locked_rel_scale"] = self.locked_rel_scale
+                d["locked_rel_rotation"] = self.locked_rel_rotation
+                d["locked_rel_flip"] = self.locked_rel_flip
         return d
 
     def get_filename_for_export(
@@ -1641,6 +1650,13 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
         d = {"strokes": self.strokes}
         if self.is_locked:
             d["locked"] = True
+            parent = getattr(self, "locked_to", None)
+            if parent:
+                d["locked_to"] = parent.save_id
+                d["locked_rel_pos"] = [self.locked_rel_pos.x(), self.locked_rel_pos.y()]
+                d["locked_rel_scale"] = self.locked_rel_scale
+                d["locked_rel_rotation"] = self.locked_rel_rotation
+                d["locked_rel_flip"] = self.locked_rel_flip
         return d
 
     def create_copy(self) -> ZeePathItem:

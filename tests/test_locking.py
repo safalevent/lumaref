@@ -340,6 +340,147 @@ def test_locked_items_drag_does_not_push_undo(qapp, view):
     assert scene.undo_stack.count() == 0
 
 
+def test_hierarchical_lock_criteria_match(qapp, scene):
+    # A (small item): area is 100
+    item_a = ZeePixmapItem(QtGui.QImage(10, 10, QtGui.QImage.Format.Format_RGB32))
+    # B (large item): area is 900 (which is 900% of A's area, so >= 150%)
+    item_b = ZeePixmapItem(QtGui.QImage(30, 30, QtGui.QImage.Format.Format_RGB32))
+    
+    scene.addItem(item_b)  # bottom-most
+    scene.addItem(item_a)  # top-most
+    
+    # Position A such that it is completely enclosed by B
+    item_b.setPos(0, 0)
+    item_a.setPos(10, 10)
+    
+    # Both are user items in scene. Let's check stacking order: index of item_b < index of item_a
+    user_items = scene.user_items()
+    assert user_items.index(item_b) < user_items.index(item_a)
+    
+    # Lock A, it should find B as parent
+    item_a.is_locked = True
+    assert item_a.locked_to is item_b
+    assert item_a in item_b.locked_children
+
+
+def test_hierarchical_lock_criteria_mismatch(qapp, scene):
+    # A (small item)
+    item_a = ZeePixmapItem(QtGui.QImage(10, 10, QtGui.QImage.Format.Format_RGB32))
+    # B (large item)
+    item_b = ZeePixmapItem(QtGui.QImage(30, 30, QtGui.QImage.Format.Format_RGB32))
+    
+    scene.addItem(item_b)
+    scene.addItem(item_a)
+    
+    # Position A such that it is far away (0% enclosure)
+    item_b.setPos(0, 0)
+    item_a.setPos(100, 100)
+    
+    # Lock A, it should NOT find B as parent since there is no overlap
+    item_a.is_locked = True
+    assert item_a.locked_to is None
+    assert not hasattr(item_b, "locked_children") or not item_b.locked_children
+
+
+def test_hierarchical_lock_transform_propagation(qapp, scene):
+    # A (small item)
+    item_a = ZeePixmapItem(QtGui.QImage(10, 10, QtGui.QImage.Format.Format_RGB32))
+    # B (large item)
+    item_b = ZeePixmapItem(QtGui.QImage(30, 30, QtGui.QImage.Format.Format_RGB32))
+    
+    scene.addItem(item_b)
+    scene.addItem(item_a)
+    
+    item_b.setPos(0, 0)
+    item_a.setPos(10, 10)
+    
+    # Lock A to B
+    item_a.is_locked = True
+    assert item_a.locked_to is item_b
+    
+    # 1. Move parent B by (20, 30). Child A should move by (20, 30) too.
+    item_b.setPos(20, 30)
+    assert item_a.pos() == QtCore.QPointF(30, 40)
+    
+    # 2. Scale parent B
+    item_b.setScale(2.0)
+    # Child scale should scale by B's scale factor (A.scale_orig * B.scale_factor)
+    # Since A.scale() was 1.0, and B.scale() is now 2.0, A's scale should be 2.0
+    assert item_a.scale() == 2.0
+    
+    # 3. Rotate parent B
+    item_b.setRotation(90.0)
+    assert item_a.rotation() == 90.0
+    
+    # 4. Flip parent B
+    item_b.do_flip()
+    assert item_a.flip() == -1.0
+
+
+def test_hierarchical_lock_parent_deletion(qapp, scene):
+    item_a = ZeePixmapItem(QtGui.QImage(10, 10, QtGui.QImage.Format.Format_RGB32))
+    item_b = ZeePixmapItem(QtGui.QImage(30, 30, QtGui.QImage.Format.Format_RGB32))
+    
+    scene.addItem(item_b)
+    scene.addItem(item_a)
+    
+    item_b.setPos(0, 0)
+    item_a.setPos(10, 10)
+    
+    item_a.is_locked = True
+    assert item_a.locked_to is item_b
+    
+    # Remove B from scene (simulate deletion)
+    scene.removeItem(item_b)
+    # This should trigger ItemSceneChange on B. Since it is removed, its children should unlock.
+    assert not item_a.is_locked
+    assert item_a.locked_to is None
+    assert item_b.locked_children == []
+
+
+def test_hierarchical_lock_save_restore(qapp, scene):
+    item_a = ZeePixmapItem(QtGui.QImage(10, 10, QtGui.QImage.Format.Format_RGB32))
+    item_b = ZeePixmapItem(QtGui.QImage(30, 30, QtGui.QImage.Format.Format_RGB32))
+    item_a.save_id = "item_a"
+    item_b.save_id = "item_b"
+    
+    scene.addItem(item_b)
+    scene.addItem(item_a)
+    
+    item_b.setPos(0, 0)
+    item_a.setPos(10, 10)
+    
+    item_a.is_locked = True
+    assert item_a.locked_to is item_b
+    
+    # Create snapshots
+    snap_a = item_a.snapshot()
+    snap_b = item_b.snapshot()
+    
+    assert snap_a.data.get("locked_to") == "item_b"
+    
+    # Recreate items from snapshots in a new scene
+    from zeeref.items import create_item_from_snapshot
+    from zeeref.scene import ZeeGraphicsScene
+    new_scene = ZeeGraphicsScene(QtGui.QUndoStack())
+    
+    new_b = create_item_from_snapshot(snap_b)
+    new_a = create_item_from_snapshot(snap_a)
+    
+    new_scene.addItem(new_b)
+    new_scene.addItem(new_a)
+    
+    # Resolve relationships
+    new_scene.resolve_lock_relationships()
+    
+    assert new_a.locked_to is new_b
+    assert new_a in new_b.locked_children
+    
+    # Test that transform propagation still works on restored items
+    new_b.setPos(50, 50)
+    assert new_a.pos() == QtCore.QPointF(60, 60)
+
+
 
 
 

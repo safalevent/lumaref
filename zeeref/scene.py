@@ -614,4 +614,25 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
                 item.setSelected(True)
                 item.bring_to_front()
             created.append(item)
+        self.resolve_lock_relationships()
         return created
+
+    def resolve_lock_relationships(self) -> None:
+        items_by_id = {item.save_id: item for item in self.user_items() if hasattr(item, "save_id")}
+        for item in self.user_items():
+            snap_data = getattr(item, "_loaded_snap_data", None)
+            if snap_data and "locked_to" in snap_data:
+                parent_id = snap_data["locked_to"]
+                parent = items_by_id.get(parent_id)
+                if parent:
+                    item.locked_to = parent
+                    if not hasattr(parent, "locked_children") or parent.locked_children is None:
+                        parent.locked_children = []
+                    if item not in parent.locked_children:
+                        parent.locked_children.append(item)
+                    
+                    rel_pos = snap_data["locked_rel_pos"]
+                    item.locked_rel_pos = QtCore.QPointF(rel_pos[0], rel_pos[1])
+                    item.locked_rel_scale = snap_data["locked_rel_scale"]
+                    item.locked_rel_rotation = snap_data["locked_rel_rotation"]
+                    item.locked_rel_flip = snap_data["locked_rel_flip"]
