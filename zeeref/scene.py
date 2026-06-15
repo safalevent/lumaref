@@ -74,6 +74,9 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
 
     def clear(self) -> None:
         self._clear_ongoing = True
+        for item in self.items():
+            if hasattr(item, "unsubscribe_tile_cache"):
+                item.unsubscribe_tile_cache()
         super().clear()
         self.internal_clipboard: list[ZeeItemMixin] = []
         self.rubberband_item: RubberbandItem = RubberbandItem()

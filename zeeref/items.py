@@ -66,7 +66,8 @@ class _GifLoader(QtCore.QObject):
     @QtCore.pyqtSlot(object, bytes)
     def _dispatch(self, item: object, raw: bytes) -> None:
         from zeeref.items import ZeePixmapItem
-        if isinstance(item, ZeePixmapItem):
+        from PyQt6 import sip
+        if isinstance(item, ZeePixmapItem) and not sip.isdeleted(item):
             item._on_gif_blob_loaded(raw)
 
 def register_item(cls: type[ZeeItemMixin]) -> type[ZeeItemMixin]:
@@ -570,15 +571,24 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
     def _ensure_subscribed(self) -> None:
         """Lazily subscribe to tile cache on first visibility check."""
         if not self._subscribed:
-            get_tile_cache().subscribe(self.image_id, self)
-            self._subscribed = True
+            from zeeref.fileio.tilecache import is_tile_cache_active
+            if is_tile_cache_active():
+                get_tile_cache().subscribe(self.image_id, self)
+                self._subscribed = True
 
     def unsubscribe_tile_cache(self) -> None:
         """Unsubscribe from tile cache. Called on removal from scene."""
         if self._subscribed:
-            get_tile_cache().unsubscribe(self.image_id, self)
+            from zeeref.fileio.tilecache import is_tile_cache_active
+            if is_tile_cache_active():
+                get_tile_cache().unsubscribe(self.image_id, self)
             self._subscribed = False
         self._stop_gif()
+
+    def itemChange(self, change: QtWidgets.QGraphicsItem.GraphicsItemChange, value: Any) -> Any:
+        if change == QtWidgets.QGraphicsItem.GraphicsItemChange.ItemSceneChange and value is None:
+            self.unsubscribe_tile_cache()
+        return super().itemChange(change, value)
 
     def _stop_gif(self) -> None:
         """Stop and clean up any active GIF playback."""

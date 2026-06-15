@@ -895,6 +895,65 @@ def test_gif_reverse_fallback_on_corrupt_bytes(qapp):
     assert item._movie is not None
 
 
+def test_gif_reverse_scene_removal_stops_timer(qapp, scene):
+    from io import BytesIO
+    from PIL import Image
+
+    # Create a simple animated GIF with 3 frames
+    frames = []
+    for color in [(255, 0, 0), (0, 255, 0), (0, 0, 255)]:
+        img = Image.new("RGBA", (10, 10), color)
+        frames.append(img)
+    bio = BytesIO()
+    frames[0].save(bio, format="GIF", save_all=True, append_images=frames[1:], duration=120, loop=0)
+    gif_bytes = bio.getvalue()
+
+    item = ZeePixmapItem(QtGui.QImage(), "test.gif")
+    item._is_gif = True
+    item._gif_bytes = gif_bytes
+    item._gif_reversed = True
+
+    scene.addItem(item)
+    item._setup_movie()
+
+    assert item._gif_timer is not None
+
+    # Remove from scene
+    scene.removeItem(item)
+
+    assert item._gif_timer is None
+
+
+def test_gif_reverse_scene_clear_stops_timer(qapp, scene):
+    from io import BytesIO
+    from PIL import Image
+
+    # Create a simple animated GIF with 3 frames
+    frames = []
+    for color in [(255, 0, 0), (0, 255, 0), (0, 0, 255)]:
+        img = Image.new("RGBA", (10, 10), color)
+        frames.append(img)
+    bio = BytesIO()
+    frames[0].save(bio, format="GIF", save_all=True, append_images=frames[1:], duration=120, loop=0)
+    gif_bytes = bio.getvalue()
+
+    item = ZeePixmapItem(QtGui.QImage(), "test.gif")
+    item._is_gif = True
+    item._gif_bytes = gif_bytes
+    item._gif_reversed = True
+
+    scene.addItem(item)
+    item._setup_movie()
+
+    assert item._gif_timer is not None
+
+    # Clear scene (simulates clear_scene or new scene loading)
+    scene.clear()
+
+    assert item._gif_timer is None
+
+
+
 def test_ensure_crop_box_is_inside(qapp, item):
     item.crop_temp = QtCore.QRectF(2, 2, 4, 4)
     item._image_width = 10
@@ -970,4 +1029,18 @@ def test_color_gamut_ignores_almost_transparent(qapp):
     item = ZeePixmapItem(img, "foo.png")
     assert item.color_gamut == {}
 
+
+def test_unsubscribe_tile_cache_when_cache_is_none(qapp, scene):
+    item = ZeePixmapItem(QtGui.QImage(), "test.png")
+    item._subscribed = True
+
+    # Verify that removing the item from the scene does not crash/throw AttributeError
+    # even when the tile cache is set to None.
+    from zeeref.fileio.tilecache import set_tile_cache
+    set_tile_cache(None)
+
+    scene.addItem(item)
+    scene.removeItem(item)  # This will trigger itemChange -> unsubscribe_tile_cache()
+
+    assert item._subscribed is False
 

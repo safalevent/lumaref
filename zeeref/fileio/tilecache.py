@@ -284,6 +284,10 @@ def get_tile_cache() -> TileCache:
     return _instance
 
 
+def is_tile_cache_active() -> bool:
+    return _instance is not None
+
+
 def set_tile_cache(cache: TileCache | None) -> None:
     global _instance
     if _instance is not None:
