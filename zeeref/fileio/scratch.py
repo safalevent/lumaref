@@ -37,14 +37,14 @@ def derive_swp_path(original: Path) -> Path:
     """Derive the .swp path in the recovery dir for a given original file."""
     recovery_dir = Path(ZeeSettings().get_recovery_dir())
     path_hash = hashlib.sha256(str(original).encode()).hexdigest()[:8]
-    return recovery_dir / f"{original.stem}_{path_hash}.zref.swp"
+    return recovery_dir / f"{original.stem}_{path_hash}.lref.swp"
 
 
 def derive_untitled_swp_path() -> Path:
     """Create a .swp path for a new unsaved scene."""
     recovery_dir = Path(ZeeSettings().get_recovery_dir())
     suffix = uuid.uuid4().hex[:8]
-    return recovery_dir / f"untitled_{suffix}.zref.swp"
+    return recovery_dir / f"untitled_{suffix}.lref.swp"
 
 
 def copy_with_progress(
@@ -104,4 +104,4 @@ def list_recovery_files() -> list[Path]:
     recovery_dir = Path(ZeeSettings().get_recovery_dir())
     if not recovery_dir.exists():
         return []
-    return [p for p in recovery_dir.iterdir() if p.name.endswith(".zref.swp")]
+    return [p for p in recovery_dir.iterdir() if p.name.endswith(".lref.swp") or p.name.endswith(".zref.swp")]

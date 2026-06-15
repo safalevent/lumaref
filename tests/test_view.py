@@ -35,7 +35,7 @@ def test_init_without_filenames(open_file_mock, qapp, commandline_args):
     parent = QtWidgets.QMainWindow()
     view = ZeeGraphicsView(qapp, parent)
     open_file_mock.assert_not_called()
-    assert view.parent.windowTitle() == "ZeeRef"
+    assert view.parent.windowTitle() == "LumaRef"
     del view
 
 
@@ -99,7 +99,7 @@ def test_clear_scene(view, item):
     assert view.transform().isIdentity()
     assert view.filename is None
     view.undo_stack.clear.assert_called_once_with()
-    assert view.parent.windowTitle() == "ZeeRef"
+    assert view.parent.windowTitle() == "LumaRef"
 
 
 def test_reset_previous_transform_when_other_item(view):
@@ -360,8 +360,8 @@ def test_on_action_save_as_filename_doesnt_end_with_bee(
     dialog_mock.return_value = (str(filename), None)
     view.on_action_save_as()
     qtbot.waitUntil(lambda: view.on_saving_finished.called is True)
-    assert filename.with_suffix(".zref").exists()
-    assert_save_result(view.on_saving_finished, filename.with_suffix(".zref"))
+    assert filename.with_suffix(".lref").exists()
+    assert_save_result(view.on_saving_finished, filename.with_suffix(".lref"))
     view.cancel_active_modes.assert_called_once_with()
 
 
@@ -1035,28 +1035,28 @@ def test_cancel_sample_color_mode_when_multi_selection(view, item):
 def test_update_window_title_no_changes_no_filename(clear_mock, view):
     view.filename = None
     view.update_window_title()
-    assert view.parent.windowTitle() == "ZeeRef"
+    assert view.parent.windowTitle() == "LumaRef"
 
 
 @patch("PyQt6.QtGui.QUndoStack.isClean", return_value=False)
 def test_update_window_title_changes_no_filename(clear_mock, view):
     view.filename = None
     view.update_window_title()
-    assert view.parent.windowTitle() == "[Untitled]* - ZeeRef"
+    assert view.parent.windowTitle() == "[Untitled]* - LumaRef"
 
 
 @patch("PyQt6.QtGui.QUndoStack.isClean", return_value=True)
 def test_update_window_title_no_changes_filename(clear_mock, view):
     view.filename = Path("test.zref")
     view.update_window_title()
-    assert view.parent.windowTitle() == "test.zref - ZeeRef"
+    assert view.parent.windowTitle() == "test.zref - LumaRef"
 
 
 @patch("PyQt6.QtGui.QUndoStack.isClean", return_value=False)
 def test_update_window_title_changes_filename(clear_mock, view):
     view.filename = Path("test.zref")
     view.update_window_title()
-    assert view.parent.windowTitle() == "test.zref* - ZeeRef"
+    assert view.parent.windowTitle() == "test.zref* - LumaRef"
 
 
 @patch("zeeref.view.ZeeGraphicsView.recalc_scene_rect")

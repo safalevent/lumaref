@@ -49,7 +49,7 @@ logger = getLogger(__name__)
 def is_zref_file(path: Path) -> bool:
     """Check whether the file at the given path is a zref file."""
 
-    return path.suffix in (".zref", ".bee")
+    return path.suffix in (".lref", ".zref", ".bee")
 
 
 def handle_sqlite_errors[T: Callable[..., Any]](func: T) -> T:
@@ -134,7 +134,7 @@ class SQLiteIO:
                 logger.debug("File not writable; use temporary copy instead")
                 self._connection.close()
                 self._tmpdir = tempfile.TemporaryDirectory(prefix=constants.APPNAME)
-                tmpname = os.path.join(self._tmpdir.name, "mig.zref")
+                tmpname = os.path.join(self._tmpdir.name, "mig.lref")
                 shutil.copyfile(self.filename, tmpname)
                 self._connection = sqlite3.connect(tmpname)
                 self._cursor = self.connection.cursor()

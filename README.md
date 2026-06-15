@@ -1,37 +1,37 @@
-# ZeeRef
+# LumaRef
 
-I liked ZeeRef and BuzzRef both and trying to merge their best features together using Gemini.
+I liked LumaRef and BuzzRef both and trying to merge their best features together using Gemini.
 
 A whiteboard for images and markdown notes on an infinite canvas. Use
 it to track a project over time, or as a mood board for reference
 images and artist assets.
 
-ZeeRef is a personal fork of [ZeeRef](https://github.com/zackgomez/zeeref)
-by zackgomez.
+LumaRef is a personal fork of [ZeeRef](https://github.com/zackgomez/zeeref)
+by zackgomez and [BuzzRef](https://github.com/kistf001/buzzref) by kistf001.
 
 ## Installation
 
 ### Prebuilt binaries (recommended)
 
-Download from the [latest release](https://github.com/safalevent/zeeref/releases/latest):
+Download from the [latest release](https://github.com/safalevent/lumaref/releases/latest):
 
 ### From source
 
 Requires Python 3.12 and [uv](https://docs.astral.sh/uv/).
 
 ```
-git clone https://github.com/safalevent/zeeref.git
-cd zeeref
+git clone https://github.com/safalevent/lumaref.git
+cd lumaref
 uv sync
-uv run zeeref
+uv run lumaref
 ```
 
 ## CLI
 
-`zeeref-cli` controls a running ZeeRef session over a local socket —
+`lumaref-cli` controls a running LumaRef session over a local socket —
 useful for shell scripting and for AI agents that need to drop images,
 write notes, or read what's currently on the board. See
-`zeeref-cli --help` for the full subcommand list.
+`lumaref-cli --help` for the full subcommand list.
 
 ## Credits
 Original BuzzRef by Rebecca Breu

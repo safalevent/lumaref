@@ -66,12 +66,12 @@ if sys.platform == 'darwin':
         exe,
         name=f'{APPNAME}.app',
         icon=join('zeeref', 'assets', icon),
-        bundle_identifier='org.zeeref.app',
+        bundle_identifier='org.lumaref.app',
         version=f'{VERSION}',
         info_plist={
             'CFBundleDocumentTypes': [
                 {
-                    'CFBundleTypeExtensions': [ 'zref' ],
+                    'CFBundleTypeExtensions': [ 'lref' ],
                     'CFBundleTypeRole': 'Viewer'
                 }
             ]

@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=ZeeRef
+Name=LumaRef
 Comment=Reference image board
-Exec=zeeref %f
-Icon=zeeref
-MimeType=application/x-zeeref;
+Exec=lumaref %f
+Icon=lumaref
+MimeType=application/x-lumaref;
 Categories=Graphics;

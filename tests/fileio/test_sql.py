@@ -51,6 +51,7 @@ TILE_INNER_JOIN = (
 @pytest.mark.parametrize(
     "filename,expected",
     [
+        (Path("foo") / "bar.lref", True),
         (Path("foo") / "bar.zref", True),
         (Path("foo") / "bar.png", False),
         (Path("foo") / "bar", False),

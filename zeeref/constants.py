@@ -13,15 +13,15 @@
 # You should have received a copy of the GNU General Public License
 # along with ZeeRef.  If not, see <https://www.gnu.org/licenses/>.
 
-APPNAME = "ZeeRef"
+APPNAME = "LumaRef"
 APPNAME_FULL = f"{APPNAME} Reference Image Viewer"
 try:
     from importlib.metadata import version
 
-    VERSION = version("zeeref")
+    VERSION = version("lumaref")
 except Exception:
     VERSION = "dev"
-WEBSITE = "https://github.com/zackgomez/zeeref"
+WEBSITE = "https://github.com/safalevent/lumaref"
 COPYRIGHT = "Copyright © 2025-2026 Zack Gomez, 2021-2024 Rebecca Breu"
 
 CHANGED_SYMBOL = "✎"

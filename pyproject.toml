@@ -9,7 +9,7 @@ include = ["zeeref*"]
 "*" = ["*.html", "*.png"]
 
 [project]
-name = "ZeeRef"
+name = "LumaRef"
 version = "0.4.7"
 description = "A reference image viewer"
 readme = "README.md"
@@ -58,14 +58,14 @@ dev = [
 ]
 
 [project.scripts]
-zeeref-cli = "zeeref.cli:main"
+lumaref-cli = "zeeref.cli:main"
 
 [project.gui-scripts]
-zeeref = "zeeref.__main__:main"
+lumaref = "zeeref.__main__:main"
 
 [project.urls]
-Repository = "https://github.com/zackgomez/zeeref"
-Issues = "https://github.com/zackgomez/zeeref/issues"
+Repository = "https://github.com/safalevent/lumaref"
+Issues = "https://github.com/safalevent/lumaref/issues"
 
 [dependency-groups]
 dev = [

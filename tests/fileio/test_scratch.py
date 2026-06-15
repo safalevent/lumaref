@@ -28,7 +28,7 @@ def test_derive_swp_path_different_for_different_files(settings):
 def test_derive_swp_path_in_recovery_dir(settings):
     path = derive_swp_path(Path("/some/path/file.zref"))
     assert "recovery" in str(path)
-    assert path.name.endswith(".zref.swp")
+    assert path.name.endswith(".lref.swp")
     assert "file_" in path.name
 
 
@@ -36,7 +36,7 @@ def test_derive_untitled_swp_path(settings):
     path = derive_untitled_swp_path()
     assert "recovery" in str(path)
     assert "untitled_" in path.name
-    assert path.name.endswith(".zref.swp")
+    assert path.name.endswith(".lref.swp")
 
 
 def test_create_scratch_file_copies_existing(settings):
@@ -95,7 +95,7 @@ def test_create_scratch_file_none_sets_pragmas(settings):
 
 
 def test_delete_scratch_file(settings):
-    with tempfile.NamedTemporaryFile(suffix=".zref.swp", delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".lref.swp", delete=False) as f:
         path = Path(f.name)
     assert path.exists()
     delete_scratch_file(path)
@@ -104,13 +104,13 @@ def test_delete_scratch_file(settings):
 
 def test_delete_scratch_file_nonexistent(settings):
     # Should not raise
-    delete_scratch_file(Path("/nonexistent/path.zref.swp"))
+    delete_scratch_file(Path("/nonexistent/path.lref.swp"))
 
 
 def test_list_recovery_files(settings):
     recovery_dir = Path(settings.get_recovery_dir())
-    swp1 = recovery_dir / "test1.zref.swp"
-    swp2 = recovery_dir / "test2.zref.swp"
+    swp1 = recovery_dir / "test1.lref.swp"
+    swp2 = recovery_dir / "test2.lref.swp"
     other = recovery_dir / "notaswp.txt"
     for path in (swp1, swp2, other):
         path.touch()
@@ -118,8 +118,8 @@ def test_list_recovery_files(settings):
     files = list_recovery_files()
     assert len(files) == 2
     basenames = [f.name for f in files]
-    assert "test1.zref.swp" in basenames
-    assert "test2.zref.swp" in basenames
+    assert "test1.lref.swp" in basenames
+    assert "test2.lref.swp" in basenames
 
 
 def test_list_recovery_files_empty(settings):

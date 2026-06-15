@@ -11,7 +11,7 @@ from zeeref.view import ZeeGraphicsView
 @patch("PyQt6.QtWidgets.QWidget.show")
 def test_zeeref_mainwindow_init(show_mock, qapp):
     window = ZeeRefMainWindow(qapp)
-    assert window.windowTitle() == "ZeeRef"
+    assert window.windowTitle() == "LumaRef"
     assert ZeeAssets().logo == ZeeAssets().logo
     assert window.windowIcon()
     assert window.contentsMargins() == QtCore.QMargins(0, 0, 0, 0)

@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop">
-    <id>org.zeeref.ZeeRef</id>
-    <launchable type="desktop-id">org.zeeref.ZeeRef.desktop</launchable>
-    <name>ZeeRef</name>
-    <developer_name>ZeeRef</developer_name>
+    <id>org.lumaref.LumaRef</id>
+    <launchable type="desktop-id">org.lumaref.LumaRef.desktop</launchable>
+    <name>LumaRef</name>
+    <developer_name>LumaRef</developer_name>
     <summary>A simple reference image viewer</summary>
     <metadata_license>CC0-1.0</metadata_license>
     <project_license>GPL-3.0</project_license>
-    <url type="homepage">https://zeeref.org/</url>
+    <url type="homepage">https://lumaref.org/</url>
 
     <description>
-        <p>ZeeRef lets you quickly arrange your reference images and view them while you create. Its minimal interface is designed not to get in the way of your creative process.</p>
+        <p>LumaRef lets you quickly arrange your reference images and view them while you create. Its minimal interface is designed not to get in the way of your creative process.</p>
     </description>
 
     <screenshots>
         <screenshot type="default">
-            <image>https://raw.githubusercontent.com/rbreu/zeeref/main/images/screenshot.png</image>
+            <image>https://raw.githubusercontent.com/rbreu/beeref/main/images/screenshot.png</image>
         </screenshot>
     </screenshots>
 

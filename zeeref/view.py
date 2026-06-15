@@ -169,7 +169,7 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         # Load files given via command line
         if commandline_args.filenames:
             fn = Path(commandline_args.filenames[0])
-            if fn.suffix in (".zref", ".bee", ".pur"):
+            if fn.suffix in (".lref", ".zref", ".bee", ".pur"):
                 self.open_from_file(fn)
             else:
                 self.do_insert_images(commandline_args.filenames)
@@ -562,7 +562,7 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
                 "Problem loading file",
                 (
                     "<p>Problem loading file %s</p>"
-                    "<p>Not accessible or not a proper zref file</p>"
+                    "<p>Not accessible or not a proper lref file</p>"
                 )
                 % result.filename,
             )
@@ -658,7 +658,7 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         filename, f = QtWidgets.QFileDialog.getOpenFileName(
             parent=self,
             caption="Open file",
-            filter=f"{constants.APPNAME} File (*.zref);;PureRef File (*.pur)",
+            filter=f"{constants.APPNAME} File (*.lref);;PureRef File (*.pur)",
         )
         if filename:
             path = Path(filename).resolve()
@@ -690,7 +690,7 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
 
     def do_save(self, filename: Path) -> None:
         if not fileio.is_zref_file(filename):
-            filename = filename.with_suffix(".zref")
+            filename = filename.with_suffix(".lref")
         assert self.scene._scratch_file is not None
         # Snapshot scene state on the main thread before handing to
         # the background thread — no Qt objects cross the boundary
@@ -711,7 +711,7 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
             parent=self,
             caption="Save file",
             directory=directory,
-            filter=f"{constants.APPNAME} File (*.zref)",
+            filter=f"{constants.APPNAME} File (*.lref)",
         )
         if filename:
             self.do_save(Path(filename))
@@ -1054,7 +1054,7 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         else:
             target = Path(path)
             if not fileio.is_zref_file(target):
-                target = target.with_suffix(".zref")
+                target = target.with_suffix(".lref")
             is_current = (
                 self.filename is not None
                 and target.resolve() == self.filename.resolve()
