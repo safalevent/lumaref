@@ -1652,8 +1652,7 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
                     "base_size": self.draw_brush_size / self.get_scale(),
                     "points": [{"x": pos.x(), "y": pos.y(), "pressure": pressure}],
                 }
-                self.draw_item.temp_stroke = self.draw_current_stroke
-                self.draw_item.update()
+                self.draw_item.start_temp_stroke(self.draw_current_stroke)
             elif event.button() == Qt.MouseButton.RightButton:
                 self.exit_draw_mode(commit=True)
             event.accept()
@@ -1715,11 +1714,8 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         if self.active_mode == self.DRAW_MODE and self.draw_current_stroke is not None:
             pos = self.mapToScene(event.pos())
             pressure = self._tablet_pressure
-            self.draw_current_stroke["points"].append(
-                {"x": pos.x(), "y": pos.y(), "pressure": pressure}
-            )
             assert self.draw_item is not None
-            self.draw_item.update()
+            self.draw_item.add_temp_point(pos.x(), pos.y(), pressure)
             event.accept()
             return
 
@@ -1761,7 +1757,7 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
             if event.button() == Qt.MouseButton.LeftButton and self.draw_current_stroke is not None:
                 assert self.draw_item is not None
                 self.draw_item.add_stroke(self.draw_current_stroke)
-                self.draw_item.temp_stroke = None
+                self.draw_item.clear_temp_stroke()
                 self.draw_current_stroke = None
             self._tablet_pressure = 1.0
             event.accept()

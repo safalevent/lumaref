@@ -1578,6 +1578,22 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
         self.setZValue(1e9)
         logger.debug(f"Initialized {self}")
 
+    def start_temp_stroke(self, stroke: dict[str, Any]) -> None:
+        self.prepareGeometryChange()
+        self.temp_stroke = stroke
+        self.update()
+
+    def add_temp_point(self, x: float, y: float, pressure: float) -> None:
+        if self.temp_stroke is not None:
+            self.prepareGeometryChange()
+            self.temp_stroke["points"].append({"x": x, "y": y, "pressure": pressure})
+            self.update()
+
+    def clear_temp_stroke(self) -> None:
+        self.prepareGeometryChange()
+        self.temp_stroke = None
+        self.update()
+
     def setZValue(self, z: float) -> None:
         # Drawings should always be on top of images. We enforce this by
         # keeping their Z-values extremely high (>1e9), and we bypass
