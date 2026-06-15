@@ -60,6 +60,9 @@ menu_structure = [
         ],
     },
     "insert_text",
+    MENU_SEPARATOR,
+    "lock_items",
+    MENU_SEPARATOR,
     {
         "menu": "&Transform",
         "items": [

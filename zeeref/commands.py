@@ -419,3 +419,27 @@ class EditItem(QtGui.QUndoCommand):
 
     def undo(self) -> None:
         self._apply(self.old)
+
+
+class LockItems(QtGui.QUndoCommand):
+    def __init__(self, scene, items, lock: bool):
+        super().__init__("Lock items" if lock else "Unlock items")
+        self.scene = scene
+        self.items = [item for item in items if getattr(item, "is_lockable", False)]
+        self.lock = lock
+
+    def redo(self):
+        for item in self.items:
+            item.is_locked = self.lock
+        self.scene.on_selection_change()
+        for view in self.scene.views():
+            if hasattr(view, "on_selection_changed"):
+                view.on_selection_changed()
+
+    def undo(self):
+        for item in self.items:
+            item.is_locked = not self.lock
+        self.scene.on_selection_change()
+        for view in self.scene.views():
+            if hasattr(view, "on_selection_changed"):
+                view.on_selection_changed()

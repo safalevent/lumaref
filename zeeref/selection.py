@@ -72,6 +72,50 @@ def with_anchor(func: Any) -> Any:
 
 
 class BaseItemMixin(_BaseItemBase):
+    _is_locked: bool = False
+
+    @property
+    def is_lockable(self) -> bool:
+        from zeeref.items import ZeePixmapItem, ZeePathItem
+        return isinstance(self, (ZeePixmapItem, ZeePathItem))
+
+    @property
+    def is_locked(self) -> bool:
+        return self._is_locked
+
+    @is_locked.setter
+    def is_locked(self, value: bool) -> None:
+        self._is_locked = value
+        self.update_locked_state()
+
+    def update_locked_state(self) -> None:
+        self.prepareGeometryChange()
+        if self._is_locked:
+            self.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+        else:
+            self.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
+        self.update()
+        scene = self.zee_scene()
+        if scene:
+            scene.update()
+
+    def setPos(self, *args: Any, **kwargs: Any) -> None:
+        if self._is_locked:
+            return
+        super().setPos(*args, **kwargs)
+
+    def setTransform(self, transform: QtGui.QTransform, combine: bool = False) -> None:
+        if self._is_locked:
+            return
+        super().setTransform(transform, combine)
+
+    def setSelected(self, selected: bool) -> None:
+        if selected and self._is_locked:
+            scene = self.zee_scene()
+            if scene and getattr(scene, "active_mode", None) == scene.RUBBERBAND_MODE:
+                return
+        super().setSelected(selected)
+
     def zee_scene(self) -> ZeeGraphicsScene | None:
         """Return the scene cast to ZeeGraphicsScene, or None."""
         scene = self.scene()
@@ -105,6 +149,8 @@ class BaseItemMixin(_BaseItemBase):
     def setScale(self, value: float) -> None:
         if value <= 0:
             return
+        if self._is_locked:
+            return
 
         logger.debug(f"Setting scale for {self} to {value}")
         self.prepareGeometryChange()
@@ -125,6 +171,8 @@ class BaseItemMixin(_BaseItemBase):
 
     @with_anchor
     def setRotation(self, value: float) -> None:
+        if self._is_locked:
+            return
         logger.debug(f"Setting rotation for {self} to {value}")
         super().setRotation(value % 360)
 
@@ -137,6 +185,8 @@ class BaseItemMixin(_BaseItemBase):
     @with_anchor
     def do_flip(self, vertical: bool = False) -> None:
         """Flips the item."""
+        if self._is_locked:
+            return
         self.setTransform(QtGui.QTransform.fromScale(-self.flip(), 1))
         if vertical:
             self.setRotation(self.rotation() + 180)
@@ -249,6 +299,20 @@ class SelectableMixin(BaseItemMixin):
     def select_rotate_size(self) -> float:
         return self.fixed_length_for_viewport(self.SELECT_ROTATE_SIZE)
 
+    def lock_button_rect(self) -> QtCore.QRectF:
+        rect = self.bounding_rect_unselected()
+        size = self.fixed_length_for_viewport(20)
+        margin = self.fixed_length_for_viewport(10)
+        return QtCore.QRectF(
+            rect.right() - size - margin,
+            rect.top() + margin,
+            size,
+            size
+        )
+
+    def is_lock_button_clicked(self, pos: QtCore.QPointF) -> bool:
+        return self.lock_button_rect().contains(pos)
+
     def select_handle_free_center(self) -> QtCore.QRectF:
         """This area should always trigger regular move operations,
         even if it is covered by selection scale/flip/... handles.
@@ -300,6 +364,63 @@ class SelectableMixin(BaseItemMixin):
         widget: QtWidgets.QWidget | None,
     ) -> None:
         self.paint_debug(painter, option, widget)
+
+        if self.isSelected() and getattr(self, "is_lockable", False) and self._is_locked:
+            lock_rect = self.lock_button_rect()
+            
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QtGui.QColor(80, 80, 80, 200))
+            painter.drawEllipse(lock_rect)
+            
+            size = lock_rect.width()
+            shackle_width = size * 0.5
+            shackle_height = size * 0.4
+            body_width = size * 0.6
+            body_height = size * 0.45
+            
+            cx = lock_rect.center().x()
+            cy = lock_rect.center().y()
+            
+            shackle_pen = QtGui.QPen(QtGui.QColor(220, 220, 220))
+            shackle_pen.setWidthF(self.fixed_length_for_viewport(2.0))
+            shackle_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(shackle_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            
+            shackle_path = QtGui.QPainterPath()
+            shackle_path.moveTo(cx - shackle_width / 2, cy)
+            shackle_path.arcTo(
+                cx - shackle_width / 2,
+                cy - shackle_height,
+                shackle_width,
+                shackle_height,
+                180,
+                -180
+            )
+            shackle_path.lineTo(cx + shackle_width / 2, cy)
+            painter.drawPath(shackle_path)
+            
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QtGui.QColor(120, 120, 120))
+            body_rect = QtCore.QRectF(
+                cx - body_width / 2,
+                cy - body_height / 4,
+                body_width,
+                body_height
+            )
+            painter.drawRoundedRect(body_rect, size * 0.1, size * 0.1)
+            
+            painter.setBrush(QtGui.QColor(40, 40, 40))
+            keyhole_rect = QtCore.QRectF(
+                cx - size * 0.08,
+                cy + size * 0.05,
+                size * 0.16,
+                size * 0.16
+            )
+            painter.drawEllipse(keyhole_rect)
+            painter.restore()
 
         if not self.has_selection_outline():
             return
@@ -405,9 +526,20 @@ class SelectableMixin(BaseItemMixin):
         return path
 
     def hoverMoveEvent(self, event: QtWidgets.QGraphicsSceneHoverEvent | None) -> None:
-        if not self.has_selection_handles():
-            return
         assert event is not None
+        if (
+            self.isSelected()
+            and getattr(self, "is_lockable", False)
+            and self._is_locked
+            and not self.select_handle_free_center().contains(event.pos())
+            and self.is_lock_button_clicked(event.pos())
+        ):
+            self.set_cursor(Qt.CursorShape.PointingHandCursor)
+            return
+
+        if not self.has_selection_handles():
+            self.unset_cursor()
+            return
 
         if event.pos() in self.select_handle_free_center():
             # This area should always trigger regular move operations,
@@ -432,6 +564,19 @@ class SelectableMixin(BaseItemMixin):
 
     def mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent | None) -> None:
         assert event is not None
+        if (
+            self.isSelected()
+            and getattr(self, "is_lockable", False)
+            and self._is_locked
+            and not self.select_handle_free_center().contains(event.pos())
+            and self.is_lock_button_clicked(event.pos())
+        ):
+            view = self.zee_view()
+            if view:
+                view.on_action_lock_items()
+            event.accept()
+            return
+
         self.event_start = event.scenePos()
         view = self.zee_view()
         if view:

@@ -460,5 +460,12 @@ actions = ActionList(
             group="active_when_gif_selected",
             enabled=False,
         ),
+        Action(
+            id="lock_items",
+            text="&Lock",
+            shortcuts=["L"],
+            callback="on_action_lock_items",
+            enabled=False,
+        ),
     ]
 )

@@ -102,6 +102,9 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
         if self.rubberband_item.scene():
             logger.debug("Ending rubberband selection")
             self.removeItem(self.rubberband_item)
+        for item in self.user_items():
+            if getattr(item, "is_locked", False):
+                item.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.active_mode = None
 
     def cancel_crop_mode(self) -> None:
@@ -339,7 +342,7 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
             return
         if self.has_single_image_selection():
             item = self.selectedItems(user_only=True)[0]
-            if isinstance(item, ZeePixmapItem):
+            if isinstance(item, ZeePixmapItem) and not getattr(item, "is_locked", False):
                 item.enter_crop_mode()
 
     def user_item_at(self, pos: QtCore.QPointF) -> SelectableMixin | None:
@@ -416,6 +419,9 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
                 self.active_mode = self.MOVE_MODE
             elif self.items():
                 self.active_mode = self.RUBBERBAND_MODE
+                for item in self.user_items():
+                    if getattr(item, "is_locked", False):
+                        item.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
 
         super().mousePressEvent(event)
 
@@ -446,6 +452,9 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
                 self.rubberband_item.bring_to_front()
             self.rubberband_item.fit(self.event_start, event.scenePos())
             self.setSelectionArea(self.rubberband_item.shape())
+            for item in self.selectedItems(user_only=True):
+                if getattr(item, "is_locked", False):
+                    item.setSelected(False)
             cast("ZeeGraphicsView", self.views()[0]).reset_previous_transform()
         super().mouseMoveEvent(event)
 

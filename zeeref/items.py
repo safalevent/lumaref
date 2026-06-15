@@ -157,6 +157,8 @@ class ZeeItemMixin(SelectableMixin):
         return self.isSelected()
 
     def has_selection_handles(self) -> bool:
+        if getattr(self, "is_locked", False):
+            return False
         scene = self.zee_scene()
         return self.isSelected() and scene is not None and scene.has_single_selection()
 
@@ -322,6 +324,7 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
         if snap.format == "gif":
             item._is_gif = True
             item._load_gif_async()
+        item.is_locked = snap.data.get("locked", False)
         return item
 
     def __str__(self) -> str:
@@ -407,7 +410,7 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
         return self.isSelected()
 
     def has_selection_handles(self) -> bool:
-        if self.crop_mode:
+        if self.crop_mode or getattr(self, "is_locked", False):
             return False
         scene = self.zee_scene()
         return self.isSelected() and scene is not None and scene.has_single_selection()
@@ -465,6 +468,8 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
             d["caption"] = self.caption
         if self._gif_reversed:
             d["gif_reversed"] = True
+        if self.is_locked:
+            d["locked"] = True
         return d
 
     def get_filename_for_export(
@@ -894,6 +899,7 @@ class ZeePixmapItem(ZeeItemMixin, QtWidgets.QGraphicsPixmapItem):
             item._is_gif = True
             item._gif_reversed = self._gif_reversed
             item._load_gif_async()
+        item.is_locked = self.is_locked
         return item
 
     def reset_crop(self) -> None:
@@ -1622,6 +1628,7 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
         item.setRotation(snap.rotation)
         if snap.flip != item.flip():
             item.do_flip()
+        item.is_locked = snap.data.get("locked", False)
         item._update_bounding_rect()
         item._invalidate_cache()
         return item
@@ -1631,7 +1638,10 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
         return f'Path ({n} stroke{"s" if n != 1 else ""})'
 
     def get_extra_save_data(self) -> dict[str, Any]:
-        return {"strokes": self.strokes}
+        d = {"strokes": self.strokes}
+        if self.is_locked:
+            d["locked"] = True
+        return d
 
     def create_copy(self) -> ZeePathItem:
         item = ZeePathItem(strokes=copy.deepcopy(self.strokes))
@@ -1641,6 +1651,7 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
         item.setRotation(self.rotation())
         if self.flip() == -1:
             item.do_flip()
+        item.is_locked = self.is_locked
         item._update_bounding_rect()
         item._invalidate_cache()
         return item

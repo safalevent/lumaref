@@ -543,6 +543,14 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
             commands.ResetTransforms(self.scene.selectedItems(user_only=True))
         )
 
+    def on_action_lock_items(self) -> None:
+        selected = self.scene.selectedItems(user_only=True)
+        lockable_items = [i for i in selected if getattr(i, "is_lockable", False)]
+        if not lockable_items:
+            return
+        all_locked = all(getattr(i, "is_locked", False) for i in lockable_items)
+        self.undo_stack.push(commands.LockItems(self.scene, lockable_items, not all_locked))
+
     def on_action_sample_color(self) -> None:
         self.cancel_active_modes()
         logger.debug("Entering sample color mode")
@@ -1445,6 +1453,20 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
                 action.qaction.blockSignals(True)
                 action.qaction.setChecked(selected[0]._gif_reversed)
                 action.qaction.blockSignals(False)
+
+        lockable_items = [i for i in selected if getattr(i, "is_lockable", False)]
+
+        from zeeref.actions.actions import actions
+        lock_action = actions.get("lock_items")
+        if lock_action and lock_action.qaction:
+            has_lockable = len(lockable_items) > 0
+            lock_action.qaction.setEnabled(has_lockable)
+            if has_lockable:
+                all_locked = all(getattr(i, "is_locked", False) for i in lockable_items)
+                if all_locked:
+                    lock_action.qaction.setText("&Unlock")
+                else:
+                    lock_action.qaction.setText("&Lock")
 
         self.require_viewport().repaint()
 
