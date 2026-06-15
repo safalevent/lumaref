@@ -495,6 +495,7 @@ class _LoaderWorker(QtCore.QThread):
     """Single worker thread that loads tile blobs from the .swp file."""
 
     tile_blob_loaded = QtCore.pyqtSignal(str, int, int, int, object)
+    tile_blob_load_failed = QtCore.pyqtSignal(str, int, int, int)
 
     def __init__(
         self,
@@ -520,12 +521,14 @@ class _LoaderWorker(QtCore.QThread):
                 )
                 if row_data is None:
                     logger.warning(f"No tile found for {key}")
+                    self.tile_blob_load_failed.emit(image_id, level, col, row)
                     continue
                 pil_img = Image.open(BytesIO(row_data[0]))
                 pil_img.load()
                 self.tile_blob_loaded.emit(image_id, level, col, row, pil_img)
             except Exception:
                 logger.exception(f"Failed to load tile {key}")
+                self.tile_blob_load_failed.emit(image_id, level, col, row)
         io._close_connection()
 
 
@@ -538,6 +541,7 @@ class ImageLoader(QtCore.QObject):
     """
 
     tile_blob_loaded = QtCore.pyqtSignal(str, int, int, int, object)
+    tile_blob_load_failed = QtCore.pyqtSignal(str, int, int, int)
 
     def __init__(self, swp_path: Path, num_workers: int = 4) -> None:
         super().__init__()
@@ -548,6 +552,7 @@ class ImageLoader(QtCore.QObject):
         for _ in range(num_workers):
             worker = _LoaderWorker(swp_path, self._queue)
             worker.tile_blob_loaded.connect(self._on_worker_loaded)
+            worker.tile_blob_load_failed.connect(self._on_worker_failed)
             self._workers.append(worker)
 
     def start(self) -> None:
@@ -578,3 +583,14 @@ class ImageLoader(QtCore.QObject):
         key = TileKey(image_id, level, col, row)
         self._requested.discard(key)
         self.tile_blob_loaded.emit(image_id, level, col, row, pil_img)
+
+    def _on_worker_failed(
+        self,
+        image_id: str,
+        level: int,
+        col: int,
+        row: int,
+    ) -> None:
+        key = TileKey(image_id, level, col, row)
+        self._requested.discard(key)
+        self.tile_blob_load_failed.emit(image_id, level, col, row)

@@ -485,7 +485,9 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
             from zeeref.actions.actions import actions
             action = actions.get("gif_reverse")
             if action and action.qaction:
+                action.qaction.blockSignals(True)
                 action.qaction.setChecked(selected[0]._gif_reversed)
+                action.qaction.blockSignals(False)
 
     def on_action_show_color_gamut(self) -> None:
         selected = self.scene.selectedItems(user_only=True)
@@ -1271,6 +1273,34 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         item = items[0]
         if isinstance(item, ZeePixmapItem):
             self.scene.copy_selection_to_internal_clipboard()
+            if item._is_gif:
+                if not item._gif_bytes:
+                    try:
+                        from zeeref.fileio.sql import SQLiteIO
+                        cache = get_tile_cache()
+                        swp = cache._loader._swp_path
+                        io = SQLiteIO(swp, readonly=True)
+                        row = io.fetchone(
+                            "SELECT data FROM tiles WHERE image_id=? AND level=0 AND col=0 AND row=0",
+                            (item.image_id,),
+                        )
+                        io._close_connection()
+                        if row and row[0]:
+                            item._gif_bytes = bytes(row[0])
+                    except Exception as e:
+                        logger.exception(f"Failed to load GIF bytes during copy: {e}")
+
+                if item._gif_bytes:
+                    mime = QtCore.QMimeData()
+                    mime.setData("zeeref/items", QtCore.QByteArray.number(len(items)))
+                    mime.setData("image/gif", QtCore.QByteArray(item._gif_bytes))
+                    current_frame = item.pixmap().toImage()
+                    if not current_frame.isNull():
+                        mime.setImageData(current_frame)
+                    clipboard.setMimeData(mime)
+                    logger.debug("GIF copied to clipboard synchronously.")
+                    return
+
             self.run_async(
                 stitch_image,
                 get_tile_cache(),
@@ -1411,7 +1441,9 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
             from zeeref.actions.actions import actions
             action = actions.get("gif_reverse")
             if action and action.qaction:
+                action.qaction.blockSignals(True)
                 action.qaction.setChecked(selected[0]._gif_reversed)
+                action.qaction.blockSignals(False)
 
         self.require_viewport().repaint()
 

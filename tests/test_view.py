@@ -664,6 +664,46 @@ def test_on_action_copy_image(clipboard_mock, view, imgfilename3x3, qtbot):
 
 
 @patch("PyQt6.QtWidgets.QApplication.clipboard")
+def test_on_action_copy_gif(clipboard_mock, view):
+    item = ZeePixmapItem(QtGui.QImage())
+    item._is_gif = True
+    item._gif_bytes = b"fake gif bytes"
+    view.scene.addItem(item)
+    view.cancel_active_modes = MagicMock()
+    item.setSelected(True)
+    mimedata = QtCore.QMimeData()
+    clipboard_mock.return_value.mimeData.return_value = mimedata
+    view.on_action_copy()
+
+    clipboard_mock.return_value.setMimeData.assert_called_once()
+    mime_sent = clipboard_mock.return_value.setMimeData.call_args[0][0]
+    assert mime_sent.data("image/gif") == b"fake gif bytes"
+    assert mime_sent.data("zeeref/items") == b"1"
+    assert view.scene.internal_clipboard == [item]
+    view.cancel_active_modes.assert_called_once_with()
+
+
+def test_on_selection_changed_reversed_gif(view):
+    from zeeref.actions.actions import actions
+    item = ZeePixmapItem(QtGui.QImage())
+    item._is_gif = True
+    item._gif_reversed = True
+    view.scene.addItem(item)
+
+    action = actions.get("gif_reverse")
+    assert action is not None
+    original_qaction = action.qaction
+    action.qaction = MagicMock()
+    try:
+        item.setSelected(True)
+        action.qaction.blockSignals.assert_any_call(True)
+        action.qaction.blockSignals.assert_any_call(False)
+        action.qaction.setChecked.assert_called_once_with(True)
+    finally:
+        action.qaction = original_qaction
+
+
+@patch("PyQt6.QtWidgets.QApplication.clipboard")
 def test_on_action_copy_text(clipboard_mock, view, imgfilename3x3):
     item = ZeeTextItem("foo bar")
     view.scene.addItem(item)

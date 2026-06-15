@@ -88,6 +88,7 @@ class TileCache(QtCore.QObject):
         self._blocking_keys: set[TileKey] = set()
         self._loader = ImageLoader(swp_path)
         self._loader.tile_blob_loaded.connect(self._on_tile_blob_loaded)
+        self._loader.tile_blob_load_failed.connect(self._on_tile_blob_load_failed)
         self._loader.start()
 
     def subscribe(self, image_id: str, listener: TileCacheListener) -> None:
@@ -216,6 +217,22 @@ class TileCache(QtCore.QObject):
                 event.set()
         logger.debug(f"Tile loaded: {key}")
         self._notify_loaded(key, pixmap)
+
+    def _on_tile_blob_load_failed(
+        self,
+        image_id: str,
+        level: int,
+        col: int,
+        row: int,
+    ) -> None:
+        """Handle tile load failure from ImageLoader."""
+        key = TileKey(image_id, level, col, row)
+        with self._lock:
+            # Wake any blocking waiters for this key
+            waiters = self._blocking_waiters.pop(key, [])
+            for event in waiters:
+                event.set()
+        logger.debug(f"Tile load failed: {key}")
 
     def compact(self) -> None:
         """Evict all non-visible tiles. Called after idle timeout."""
