@@ -755,28 +755,38 @@ class SelectableMixin(BaseItemMixin):
         scene = self.require_scene()
         if self.active_mode == self.SCALE_MODE:
             if self.get_scale_factor(event) != 1:
-                scene.undo_stack.push(
-                    commands.ScaleItemsBy(
-                        self.selection_action_items(),
-                        self.get_scale_factor(event),
-                        self.event_anchor,
-                        ignore_first_redo=True,
+                movable_items = [
+                    i for i in self.selection_action_items()
+                    if not getattr(i, "is_locked", False)
+                ]
+                if movable_items:
+                    scene.undo_stack.push(
+                        commands.ScaleItemsBy(
+                            movable_items,
+                            self.get_scale_factor(event),
+                            self.event_anchor,
+                            ignore_first_redo=True,
+                        )
                     )
-                )
             event.accept()
             self.active_mode = None
             return
         elif self.active_mode == self.ROTATE_MODE:
             scene.on_selection_change()
             if self.get_rotate_delta(event.scenePos()) != 0:
-                scene.undo_stack.push(
-                    commands.RotateItemsBy(
-                        self.selection_action_items(),
-                        self.get_rotate_delta(event.scenePos()),
-                        self.event_anchor,
-                        ignore_first_redo=True,
+                movable_items = [
+                    i for i in self.selection_action_items()
+                    if not getattr(i, "is_locked", False)
+                ]
+                if movable_items:
+                    scene.undo_stack.push(
+                        commands.RotateItemsBy(
+                            movable_items,
+                            self.get_rotate_delta(event.scenePos()),
+                            self.event_anchor,
+                            ignore_first_redo=True,
+                        )
                     )
-                )
             event.accept()
             self.active_mode = None
             return

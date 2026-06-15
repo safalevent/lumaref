@@ -515,33 +515,33 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
 
     def on_action_reset_scale(self) -> None:
         self.cancel_active_modes()
-        self.undo_stack.push(
-            commands.ResetScale(self.scene.selectedItems(user_only=True))
-        )
+        items = self.scene.selectedItems(user_only=True, unlocked_only=True)
+        if items:
+            self.undo_stack.push(commands.ResetScale(items))
 
     def on_action_reset_rotation(self) -> None:
         self.cancel_active_modes()
-        self.undo_stack.push(
-            commands.ResetRotation(self.scene.selectedItems(user_only=True))
-        )
+        items = self.scene.selectedItems(user_only=True, unlocked_only=True)
+        if items:
+            self.undo_stack.push(commands.ResetRotation(items))
 
     def on_action_reset_flip(self) -> None:
         self.cancel_active_modes()
-        self.undo_stack.push(
-            commands.ResetFlip(self.scene.selectedItems(user_only=True))
-        )
+        items = self.scene.selectedItems(user_only=True, unlocked_only=True)
+        if items:
+            self.undo_stack.push(commands.ResetFlip(items))
 
     def on_action_reset_crop(self) -> None:
         self.cancel_active_modes()
-        self.undo_stack.push(
-            commands.ResetCrop(self.scene.selectedItems(user_only=True))
-        )
+        items = self.scene.selectedItems(user_only=True, unlocked_only=True)
+        if items:
+            self.undo_stack.push(commands.ResetCrop(items))
 
     def on_action_reset_transforms(self) -> None:
         self.cancel_active_modes()
-        self.undo_stack.push(
-            commands.ResetTransforms(self.scene.selectedItems(user_only=True))
-        )
+        items = self.scene.selectedItems(user_only=True, unlocked_only=True)
+        if items:
+            self.undo_stack.push(commands.ResetTransforms(items))
 
     def on_action_lock_items(self) -> None:
         selected = self.scene.selectedItems(user_only=True)

@@ -152,7 +152,7 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
 
         self.cancel_active_modes()
         values = []
-        items = self.selectedItems(user_only=True)
+        items = self.selectedItems(user_only=True, unlocked_only=True)
         for item in items:
             rect = self.itemsBoundingRect(items=[item])
             values.append(getattr(rect, mode)())
@@ -183,7 +183,7 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
 
         self.cancel_active_modes()
         sizes = []
-        items = self.selectedItems(user_only=True)
+        items = self.selectedItems(user_only=True, unlocked_only=True)
         for item in items:
             rect = self.itemsBoundingRect(items=[item])
             sizes.append(rect.width() * rect.height())
@@ -216,7 +216,7 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
 
         self.cancel_active_modes()
 
-        items = sort_by_filename(self.selectedItems(user_only=True))
+        items = sort_by_filename(self.selectedItems(user_only=True, unlocked_only=True))
         if len(items) < 2:
             return
 
@@ -254,7 +254,7 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
     def arrange_optimal(self) -> None:
         self.cancel_active_modes()
 
-        items = self.selectedItems(user_only=True)
+        items = self.selectedItems(user_only=True, unlocked_only=True)
         if len(items) < 2:
             return
 
@@ -291,7 +291,7 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
         max_width = 0
         max_height = 0
         gap = self.settings.valueOrDefault("Items/arrange_gap")
-        items = sort_by_filename(self.selectedItems(user_only=True))
+        items = sort_by_filename(self.selectedItems(user_only=True, unlocked_only=True))
 
         if len(items) < 2:
             return
@@ -329,7 +329,7 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
         self.cancel_active_modes()
         self.undo_stack.push(
             commands.FlipItems(
-                self.selectedItems(user_only=True),
+                self.selectedItems(user_only=True, unlocked_only=True),
                 self.get_selection_center(),
                 vertical=vertical,
             )
@@ -468,30 +468,33 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
             self.active_mode == self.MOVE_MODE
             and self.has_selection()
             and self.multi_select_item.active_mode is None
+            and self.selectedItems(user_only=True)
             and self.selectedItems(user_only=True)[0].active_mode is None
         ):
             delta = event.scenePos() - self.event_start
             if not delta.isNull():
-                self.undo_stack.push(
-                    commands.MoveItemsBy(
-                        self.selectedItems(user_only=True),
-                        delta,
-                        ignore_first_redo=True,
+                movable_items = self.selectedItems(user_only=True, unlocked_only=True)
+                if movable_items:
+                    self.undo_stack.push(
+                        commands.MoveItemsBy(
+                            movable_items,
+                            delta,
+                            ignore_first_redo=True,
+                        )
                     )
-                )
         self.active_mode = None
         super().mouseReleaseEvent(event)
 
     @overload
-    def selectedItems(self, user_only: Literal[True]) -> list[ZeeItemMixin]: ...
+    def selectedItems(self, user_only: Literal[True], unlocked_only: bool = False) -> list[ZeeItemMixin]: ...
 
     @overload
     def selectedItems(
-        self, user_only: Literal[False] = ...
+        self, user_only: Literal[False] = ..., unlocked_only: bool = False
     ) -> list[QtWidgets.QGraphicsItem]: ...
 
     def selectedItems(
-        self, user_only: bool = False
+        self, user_only: bool = False, unlocked_only: bool = False
     ) -> list[ZeeItemMixin] | list[QtWidgets.QGraphicsItem]:
         """If ``user_only`` is set to ``True``, only return items added
         by the user (i.e. no multi select outlines and other UI items).
@@ -501,7 +504,9 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
 
         items = super().selectedItems()
         if user_only:
-            return [i for i in items if isinstance(i, ZeeItemMixin)]
+            items = [i for i in items if isinstance(i, ZeeItemMixin)]
+        if unlocked_only:
+            items = [i for i in items if not getattr(i, "is_locked", False)]
         return items
 
     def user_items(self) -> list[ZeeItemMixin]:

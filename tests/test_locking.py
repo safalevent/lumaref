@@ -292,5 +292,54 @@ def test_lock_multiple_items_with_view_undo_retains_position(qapp, view):
     assert item2.pos() == pos2_init
 
 
+def test_locked_items_drag_does_not_push_undo(qapp, view):
+    scene = view.scene
+    item = ZeePixmapItem(QtGui.QImage(10, 10, QtGui.QImage.Format.Format_RGB32))
+    scene.addItem(item)
+    item.setPos(10, 20)
+    item.setSelected(True)
+    item.is_locked = True
+
+    # Empty undo stack before dragging
+    scene.undo_stack.clear()
+
+    # Get local points in view viewport coordinates
+    pt_start = QtCore.QPointF(view.mapFromScene(QtCore.QPointF(15, 25)))
+    pt_end = QtCore.QPointF(view.mapFromScene(QtCore.QPointF(115, 125)))
+
+    press_event = QtGui.QMouseEvent(
+        QtCore.QEvent.Type.MouseButtonPress,
+        pt_start,
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    view.mousePressEvent(press_event)
+
+    move_event = QtGui.QMouseEvent(
+        QtCore.QEvent.Type.MouseMove,
+        pt_end,
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    view.mouseMoveEvent(move_event)
+
+    release_event = QtGui.QMouseEvent(
+        QtCore.QEvent.Type.MouseButtonRelease,
+        pt_end,
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    view.mouseReleaseEvent(release_event)
+
+    # Position should be unchanged
+    assert item.pos() == QtCore.QPointF(10, 20)
+    # No commands should be pushed to the undo stack
+    assert scene.undo_stack.count() == 0
+
+
+
 
 
