@@ -278,10 +278,10 @@ def _insert_image(
         logger.debug(f"_insert_image: GIF stored ({len(raw_bytes)} bytes) in {time.monotonic() - t0:.3f}s")
     else:
         def _encode(
-            args: tuple[QtGui.QImage, int, int, int],
+            args: tuple[Image.Image, int, int, int],
         ) -> tuple[int, int, int, bytes]:
-            tile_qimg, level, col, row = args
-            return (level, col, row, encode_tile(tile_qimg, fmt))
+            tile_pil, level, col, row = args
+            return (level, col, row, encode_tile(tile_pil, fmt))
 
         tile_count = 0
         with ThreadPoolExecutor() as pool:
