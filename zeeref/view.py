@@ -511,10 +511,22 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         if selected:
             item = selected[0]
             filename = getattr(item, "filename", None)
-            if filename:
-                widgets.ZeeNotification(self, Path(filename).name)
-            elif getattr(item, "is_image", False):
-                widgets.ZeeNotification(self, "Non-named Temporary Image")
+            is_image = getattr(item, "is_image", False)
+            if not filename and not is_image:
+                return
+            import html
+            name_text = html.escape(Path(filename).name) if filename else "Non-named Temporary Image"
+            subtext = None
+            if is_image:
+                w = getattr(item, "_image_width", None)
+                h = getattr(item, "_image_height", None)
+                if w is not None and h is not None:
+                    subtext = f"{w} x {h}"
+            if subtext:
+                msg = f"<div align='center'>{name_text}<br><span style='color: #8c8c8c; font-size: 11px;'>{subtext}</span></div>"
+            else:
+                msg = name_text
+            widgets.ZeeNotification(self, msg)
 
     def on_action_crop(self) -> None:
         self.scene.crop_items()

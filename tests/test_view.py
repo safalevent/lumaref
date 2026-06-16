@@ -906,7 +906,7 @@ def test_on_action_show_filename(notification_mock, view, imgfilename3x3):
     view.scene.addItem(item)
     item.setSelected(True)
     view.on_action_show_filename()
-    notification_mock.assert_called_once_with(view, "bar.png")
+    notification_mock.assert_called_once_with(view, "<div align='center'>bar.png<br><span style='color: #8c8c8c; font-size: 11px;'>3 x 3</span></div>")
 
 
 @patch("zeeref.widgets.ZeeNotification")
@@ -915,7 +915,7 @@ def test_on_action_show_filename_no_filename(notification_mock, view, imgfilenam
     view.scene.addItem(item)
     item.setSelected(True)
     view.on_action_show_filename()
-    notification_mock.assert_called_once_with(view, "Non-named Temporary Image")
+    notification_mock.assert_called_once_with(view, "<div align='center'>Non-named Temporary Image<br><span style='color: #8c8c8c; font-size: 11px;'>3 x 3</span></div>")
 
 
 @patch("PyQt6.QtWidgets.QWidget.show")

@@ -108,6 +108,15 @@ def test_bee_notification(single_shot_mock, view):
     single_shot_mock.assert_called_once_with(1000 * 3, widget.deleteLater)
 
 
+@patch("PyQt6.QtCore.QTimer.singleShot")
+def test_bee_notification_seamless_switching(single_shot_mock, view):
+    widget1 = ZeeNotification(view, "First")
+    assert widget1.isVisible() is True
+    widget2 = ZeeNotification(view, "Second")
+    assert widget1.isVisible() is False
+    assert widget2.isVisible() is True
+
+
 def test_sample_color_widget(view):
     widget = SampleColorWidget(view, QtCore.QPoint(2, 5), QtGui.QColor(255, 0, 0))
     assert widget.color == QtGui.QColor(255, 0, 0)

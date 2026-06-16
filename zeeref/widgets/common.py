@@ -217,7 +217,13 @@ class ChangeOpacityDialog(QtWidgets.QDialog):
 class ZeeNotification(QtWidgets.QWidget):
     def __init__(self, parent, text):
         super().__init__(parent)
+        if hasattr(parent, "findChildren"):
+            for child in parent.findChildren(ZeeNotification):
+                if child is not self:
+                    child.hide()
+                    child.deleteLater()
         self.label = QtWidgets.QLabel(text)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setObjectName("ZeeNotification")
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setAutoFillBackground(True)
