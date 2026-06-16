@@ -467,5 +467,33 @@ actions = ActionList(
             callback="on_action_lock_items",
             enabled=False,
         ),
+        Action(
+            id="bring_forward",
+            text="Bring Forward",
+            shortcuts=["Ctrl+Up"],
+            callback="on_action_bring_forward",
+            group="active_when_selection",
+        ),
+        Action(
+            id="send_backward",
+            text="Send Backward",
+            shortcuts=["Ctrl+Down"],
+            callback="on_action_send_backward",
+            group="active_when_selection",
+        ),
+        Action(
+            id="bring_to_front",
+            text="Bring to Front",
+            shortcuts=["Ctrl+Shift+Up"],
+            callback="on_action_bring_to_front",
+            group="active_when_selection",
+        ),
+        Action(
+            id="send_to_back",
+            text="Send to Back",
+            shortcuts=["Ctrl+Shift+Down"],
+            callback="on_action_send_to_back",
+            group="active_when_selection",
+        ),
     ]
 )

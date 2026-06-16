@@ -449,6 +449,18 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
     def on_action_lower_to_bottom(self) -> None:
         self.scene.lower_to_bottom()
 
+    def on_action_bring_forward(self) -> None:
+        self.scene.move_selected_layers("up")
+
+    def on_action_send_backward(self) -> None:
+        self.scene.move_selected_layers("down")
+
+    def on_action_bring_to_front(self) -> None:
+        self.scene.move_selected_layers("top")
+
+    def on_action_send_to_back(self) -> None:
+        self.scene.move_selected_layers("bottom")
+
     def on_action_normalize_height(self) -> None:
         self.scene.normalize_height()
 

@@ -34,6 +34,7 @@ from zeeref.items import (
     ZeeItemMixin,
     ZeePixmapItem,
     ZeeTextItem,
+    ZeePathItem,
     create_item_from_snapshot,
     sort_by_filename,
 )
@@ -143,6 +144,68 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
 
         for item in items:
             item.setZValue(item.zValue() + delta)
+
+    def move_selected_layers(self, direction: str) -> None:
+        self.cancel_active_modes()
+        selected = self.selectedItems(user_only=True)
+        items_to_move = [
+            item for item in selected if isinstance(item, (ZeePixmapItem, ZeePathItem))
+        ]
+        if not items_to_move:
+            return
+
+        new_z_values = []
+        moved_items = []
+
+        for item in items_to_move:
+            same_type_items = [
+                other
+                for other in self.user_items()
+                if type(other) is type(item) and other is not item
+            ]
+            if not same_type_items:
+                continue
+
+            new_z = None
+            if direction == "up":
+                # Find colliding items of same type above item
+                colliding = [
+                    other
+                    for other in same_type_items
+                    if other.zValue() > item.zValue() and item.collidesWithItem(other)
+                ]
+                if colliding:
+                    colliding.sort(key=lambda x: x.zValue())
+                    new_z = colliding[0].zValue() + self.Z_STEP
+            elif direction == "down":
+                # Find colliding items of same type below item
+                colliding = [
+                    other
+                    for other in same_type_items
+                    if other.zValue() < item.zValue() and item.collidesWithItem(other)
+                ]
+                if colliding:
+                    colliding.sort(key=lambda x: x.zValue(), reverse=True)
+                    new_z = colliding[0].zValue() - self.Z_STEP
+            elif direction == "top":
+                max_z = max(other.zValue() for other in same_type_items)
+                new_z = max_z + self.Z_STEP
+            elif direction == "bottom":
+                min_z = min(other.zValue() for other in same_type_items)
+                new_z = min_z - self.Z_STEP
+
+            if new_z is not None:
+                # Enforce boundaries to keep drawings (>=1e9) in front of images (<1e9)
+                if isinstance(item, ZeePathItem):
+                    new_z = max(1e9, new_z)
+                else:
+                    new_z = min(1e9 - self.Z_STEP, new_z)
+
+                new_z_values.append(new_z)
+                moved_items.append(item)
+
+        if moved_items:
+            self.undo_stack.push(commands.MoveLayers(moved_items, new_z_values))
 
     def normalize_width_or_height(self, mode: str) -> None:
         """Scale the selected images to have the same width or height, as

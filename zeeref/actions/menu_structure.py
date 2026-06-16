@@ -95,6 +95,15 @@ menu_structure = [
         ],
     },
     {
+        "menu": "La&yer",
+        "items": [
+            "bring_forward",
+            "send_backward",
+            "bring_to_front",
+            "send_to_back",
+        ],
+    },
+    {
         "menu": "&Images",
         "items": [
             "change_opacity",

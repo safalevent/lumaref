@@ -443,3 +443,22 @@ class LockItems(QtGui.QUndoCommand):
         for view in self.scene.views():
             if hasattr(view, "on_selection_changed"):
                 view.on_selection_changed()
+
+
+class MoveLayers(QtGui.QUndoCommand):
+    def __init__(self, items, new_z_values):
+        super().__init__("Move layers")
+        self.items = items
+        self.new_z_values = new_z_values
+        self.old_z_values = [item.zValue() for item in items]
+
+    def redo(self):
+        for item, z in zip(self.items, self.new_z_values):
+            item.setZValue(z)
+            item.update()
+
+    def undo(self):
+        for item, z in zip(self.items, self.old_z_values):
+            item.setZValue(z)
+            item.update()
+
