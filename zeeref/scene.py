@@ -71,6 +71,7 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
         self.settings: ZeeSettings = ZeeSettings()
         self.clear()
         self._clear_ongoing: bool = False
+        self.last_press_selected_items: list[ZeeItemMixin] = []
 
     def clear(self) -> None:
         self._clear_ongoing = True
@@ -353,6 +354,29 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
             item = item.parentItem()
         return item  # type: ignore[return-value]
 
+    def user_items_at(self, pos: QtCore.QPointF) -> list[ZeeItemMixin]:
+        """Returns all user items (instances of ZeeItemMixin) at the given point,
+        sorted from top (front) to bottom (back) in stacking order."""
+        if not isinstance(pos, (QtCore.QPointF, QtCore.QPoint)):
+            item = self.user_item_at(pos)
+            return [item] if isinstance(item, ZeeItemMixin) else []
+        view = self.views()[0] if self.views() else None
+        transform = view.transform() if view else QtGui.QTransform()
+        raw_items = self.items(
+            pos,
+            Qt.ItemSelectionMode.IntersectsItemShape,
+            Qt.SortOrder.DescendingOrder,
+            transform
+        )
+        user_items = []
+        for item in raw_items:
+            curr = item
+            while curr and not isinstance(curr, SelectableMixin):
+                curr = curr.parentItem()
+            if curr and isinstance(curr, ZeeItemMixin) and curr not in user_items:
+                user_items.append(curr)
+        return user_items
+
     def sample_color_at(self, position: QtCore.QPointF) -> QtGui.QColor | None:
         item_at_pos = self.user_item_at(position)
         if isinstance(item_at_pos, ZeePixmapItem):
@@ -394,12 +418,14 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
 
     def mousePressEvent(self, event: QtWidgets.QGraphicsSceneMouseEvent | None) -> None:
         assert event is not None
+        event.ignore()
         if event.button() == Qt.MouseButton.RightButton:
             # Right-click invokes the context menu on the
             # GraphicsView. We don't need it here.
             return
 
         if event.button() == Qt.MouseButton.LeftButton:
+            self.last_press_selected_items = self.selectedItems(user_only=True)
             self.event_start = event.scenePos()
             item_at_pos = self.user_item_at(event.scenePos())
 
@@ -417,6 +443,38 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
                     return
             if item_at_pos:
                 self.active_mode = self.MOVE_MODE
+                
+                if event.modifiers() == Qt.KeyboardModifier.NoModifier:
+                    items_at_click = self.user_items_at(event.scenePos())
+                    selected_items = [item for item in items_at_click if item.isSelected()]
+                    if selected_items and len(items_at_click) > 1:
+                        topmost_selected = selected_items[0]
+                        idx = items_at_click.index(topmost_selected)
+                        
+                        if idx + 1 < len(items_at_click):
+                            target_item = items_at_click[idx + 1]
+                        else:
+                            target_item = items_at_click[0]
+                        hidden_items = []
+                        target_idx = items_at_click.index(target_item)
+                        for i in range(target_idx):
+                            item = items_at_click[i]
+                            if item.isVisible():
+                                item.setVisible(False)
+                                hidden_items.append(item)
+                        
+                        view = cast("ZeeGraphicsView", self.views()[0]) if self.views() else None
+                        prev_transform_backup = view.previous_transform if view else None
+                        try:
+                            self.active_mode = None
+                            super().mousePressEvent(event)
+                        finally:
+                            self.active_mode = self.MOVE_MODE
+                            if view:
+                                view.previous_transform = prev_transform_backup
+                            for item in hidden_items:
+                                item.setVisible(True)
+                        return
             elif self.items():
                 self.active_mode = self.RUBBERBAND_MODE
                 for item in self.user_items():
@@ -432,7 +490,22 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
         assert event is not None
         item = self.user_item_at(event.scenePos())
         if item:
-            if not item.isSelected():
+            user_items = self.user_items_at(event.scenePos())
+            if user_items:
+                target = None
+                for it in user_items:
+                    if it in self.last_press_selected_items:
+                        target = it
+                        break
+                if target is None:
+                    for it in user_items:
+                        if it.isSelected():
+                            target = it
+                            break
+                if target is not None:
+                    item = target
+            if isinstance(item, ZeeItemMixin):
+                self.clearSelection()
                 item.setSelected(True)
             if isinstance(item, ZeeTextItem):
                 item.enter_edit_mode()
