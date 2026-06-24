@@ -612,6 +612,7 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         for snap in result.snapshots:
             item = create_item_from_snapshot(snap)
             self.scene.addItem(item)
+            item.setZValue(item.zValue())
         self.scene.resolve_lock_relationships()
         self.on_action_fit_scene()
 

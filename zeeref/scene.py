@@ -129,6 +129,8 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
     def raise_to_top(self) -> None:
         self.cancel_active_modes()
         items = self.selectedItems(user_only=True)
+        if not items:
+            return
         z_values = map(lambda i: i.zValue(), items)
         delta = self.max_z + self.Z_STEP - min(z_values)
         logger.debug(f"Raise to top, delta: {delta}")
@@ -511,13 +513,16 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
                     items_at_click = self.user_items_at(event.scenePos())
                     selected_items = [item for item in items_at_click if item.isSelected()]
                     if selected_items and len(items_at_click) > 1:
-                        topmost_selected = selected_items[0]
-                        idx = items_at_click.index(topmost_selected)
+                        items_set = set(items_at_click)
+                        if not hasattr(self, "_cycle_set") or self._cycle_set != items_set:
+                            self._cycle_set = items_set
+                            self._cycle_list = items_at_click
+                            topmost_selected = selected_items[0]
+                            self._cycle_idx = self._cycle_list.index(topmost_selected)
                         
-                        if idx + 1 < len(items_at_click):
-                            target_item = items_at_click[idx + 1]
-                        else:
-                            target_item = items_at_click[0]
+                        self._cycle_idx = (self._cycle_idx + 1) % len(self._cycle_list)
+                        target_item = self._cycle_list[self._cycle_idx]
+                        
                         hidden_items = []
                         target_idx = items_at_click.index(target_item)
                         for i in range(target_idx):
@@ -537,13 +542,13 @@ class ZeeGraphicsScene(QtWidgets.QGraphicsScene):
                                 view.previous_transform = prev_transform_backup
                             for item in hidden_items:
                                 item.setVisible(True)
+                            target_item.bring_to_front()
                         return
             elif self.items():
                 self.active_mode = self.RUBBERBAND_MODE
                 for item in self.user_items():
                     if getattr(item, "is_locked", False):
                         item.setFlag(QtWidgets.QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
-
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(
