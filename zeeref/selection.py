@@ -448,6 +448,8 @@ class BaseItemMixin(_BaseItemBase):
         # https://bugreports.qt.io/browse/QTBUG-4190
         scene = self.zee_scene()
         if scene:
+            if isinstance(cursor, Qt.CursorShape):
+                cursor = QtGui.QCursor(cursor)
             scene.cursor_changed.emit(cursor)
 
     def unset_cursor(self) -> None:
