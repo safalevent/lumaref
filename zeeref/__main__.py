@@ -141,9 +141,16 @@ class ZeeRefMainWindow(QtWidgets.QMainWindow):
             pass  # Already disconnected or scene deleted
         geom = self.saveGeometry()
         self.view.settings.setValue("MainWindow/geometry", geom)
+        worker_timed_out = False
+        if self.view.worker is not None and self.view.worker.isRunning():
+            self.view.worker.on_canceled()
+            worker_timed_out = not self.view.worker.wait(5000)
+            if worker_timed_out:
+                logger.warning("Background worker did not stop within 5 s; scratch file cleanup deferred")
         if self.view.scene._scratch_file:
             self.view._stop_tile_cache()
-            delete_scratch_file(self.view.scene._scratch_file)
+            if not worker_timed_out:
+                delete_scratch_file(self.view.scene._scratch_file)
             self.view.scene._scratch_file = None
         event.accept()
 

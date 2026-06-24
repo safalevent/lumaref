@@ -116,7 +116,9 @@ class TileCache(QtCore.QObject):
         """End a viewport check frame. Runs eviction with the full visible set."""
         with self._lock:
             self._in_frame = False
-            self._evict()
+            evicted_keys = self._evict()
+        for key in evicted_keys:
+            self._notify_unloaded(key)
 
     @main_thread_only
     def request(self, keys: set[TileKey]) -> dict[TileKey, QtGui.QPixmap]:
@@ -244,36 +246,39 @@ class TileCache(QtCore.QObject):
                 b = self._pixmap_bytes(pixmap)
                 self._current_bytes -= b
                 freed += b
-                self._notify_unloaded(key)
             if to_evict:
                 logger.info(
                     f"Idle compact: evicted {len(to_evict)} tiles, "
                     f"freed {freed // 1024 // 1024}MB, "
                     f"remaining={len(self._lru)} visible={len(self._visible)}"
                 )
+        for key in to_evict:
+            self._notify_unloaded(key)
 
-    def _evict(self) -> None:
-        """Evict oldest tiles over capacity, skipping visible ones.
+    def _evict(self) -> list[TileKey]:
+        """Evict oldest non-pinned tiles until under capacity.
 
         Must be called with self._lock held.
+        Returns evicted keys so the caller can notify subscribers after releasing the lock.
         """
-        evicted = 0
-        while self._current_bytes > self._capacity_bytes and self._lru:
-            key, pixmap = self._lru.popitem(last=False)
-            if key in self._visible or key in self._blocking_keys:
-                self._lru[key] = pixmap
-                self._lru.move_to_end(key)
+        evicted: list[TileKey] = []
+        keys = list(self._lru.keys())
+        for key in keys:
+            if self._current_bytes <= self._capacity_bytes:
                 break
+            if key in self._visible or key in self._blocking_keys:
+                continue
+            pixmap = self._lru.pop(key)
             self._current_bytes -= self._pixmap_bytes(pixmap)
             logger.debug(f"Tile evicted: {key}")
-            self._notify_unloaded(key)
-            evicted += 1
+            evicted.append(key)
         if evicted:
             logger.info(
-                f"Evicted {evicted} tiles (lru={self._current_bytes // 1024 // 1024}MB/"
+                f"Evicted {len(evicted)} tiles (lru={self._current_bytes // 1024 // 1024}MB/"
                 f"{self._capacity_bytes // 1024 // 1024}MB, "
                 f"count={len(self._lru)}, visible={len(self._visible)})"
             )
+        return evicted
 
 
 _instance: TileCache | None = None

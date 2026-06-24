@@ -56,6 +56,8 @@ from zeeref.utils import get_file_extension_from_format, qcolor_to_hex
 commandline_args = CommandlineArgs()
 logger = getLogger(__name__)
 
+_STITCH_PIXEL_LIMIT = 50_000_000
+
 
 @dataclass
 class DialogOptions:
@@ -843,7 +845,7 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
             self.worker.start()
 
     def on_action_quit(self) -> None:
-        self.app.quit()
+        self.parent.close()
 
     def on_action_settings(self) -> None:
         widgets.settings.SettingsDialog(self)
@@ -1334,6 +1336,21 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
                     clipboard.setMimeData(mime)
                     logger.debug("GIF copied to clipboard synchronously.")
                     return
+
+            pixel_count = item._image_width * item._image_height
+            if pixel_count > _STITCH_PIXEL_LIMIT:
+                mime = QtCore.QMimeData()
+                mime.setData("zeeref/items", QtCore.QByteArray.number(len(items)))
+                clipboard.setMimeData(mime)
+                widgets.ZeeNotification(
+                    self,
+                    f"<div align='center'>"
+                    f"{item._image_width}\u00d7{item._image_height}px \u2014 too large for system clipboard.<br>"
+                    "<span style='color:#8c8c8c;font-size:11px'>"
+                    "Paste within LumaRef works. Use Save \u2192 Export to use in another app."
+                    "</span></div>",
+                )
+                return
 
             self.run_async(
                 stitch_image,

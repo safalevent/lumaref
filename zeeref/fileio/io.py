@@ -241,7 +241,8 @@ def _insert_image(
     caption: str | None = None,
     transforms: "ImageInsert | None" = None,
     raw_bytes: bytes | None = None,
-) -> PixmapItemSnapshot:
+    worker: "ThreadedIO | None" = None,
+) -> PixmapItemSnapshot | None:
     """Write tiles to .swp and queue a snapshot for the main thread.
 
     *pos* is the scene-coord point at which to **visually center** the
@@ -253,7 +254,8 @@ def _insert_image(
     stored as a single blob at (level=0, col=0, row=0) with format='gif',
     bypassing the tile pyramid entirely.
     """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import itertools
+    from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
     from zeeref.fileio.tiling import encode_tile, generate_tiles, pick_format
 
@@ -283,17 +285,33 @@ def _insert_image(
             tile_pil, level, col, row = args
             return (level, col, row, encode_tile(tile_pil, fmt))
 
+        _TILE_BATCH = 64
         tile_count = 0
-        with ThreadPoolExecutor() as pool:
-            futures = [pool.submit(_encode, args) for args in generate_tiles(pil_img)]
-            for future in as_completed(futures):
-                level, col, row, data = future.result()
-                io.ex(
-                    "INSERT INTO tiles (image_id, level, col, row, data) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (image_id, level, col, row, data),
-                )
-                tile_count += 1
+        tile_gen = generate_tiles(pil_img)
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            pending: set = {
+                pool.submit(_encode, args)
+                for args in itertools.islice(tile_gen, _TILE_BATCH)
+            }
+            while pending:
+                done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                for future in done:
+                    level, col, row, data = future.result()
+                    io.ex(
+                        "INSERT INTO tiles (image_id, level, col, row, data) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (image_id, level, col, row, data),
+                    )
+                    tile_count += 1
+                if worker is not None and worker.canceled:
+                    for f in pending:
+                        f.cancel()
+                    pending.clear()
+                    logger.debug("_insert_image: canceled, stopping tile encode")
+                    io.connection.commit()
+                    return None
+                for args in itertools.islice(tile_gen, len(done)):
+                    pending.add(pool.submit(_encode, args))
         io.connection.commit()
         logger.debug(f"_insert_image: {tile_count} tiles in {time.monotonic() - t0:.3f}s")
 
@@ -403,7 +421,10 @@ def insert_image_files(
             caption=caption,
             transforms=transforms,
             raw_bytes=raw_bytes,
+            worker=worker,
         )
+        if snap is None:
+            break
         created_ids.append(snap.save_id)
         if worker.canceled:
             break
@@ -436,10 +457,11 @@ def insert_image_from_clipboard(
         "RGBA",
         qimage.bytesPerLine(),
     )
+    del raw_bytes
 
     assert scene._scratch_file is not None
     io = SQLiteIO(scene._scratch_file)
-    _insert_image(pil_img, None, pos, io, scene)
+    _insert_image(pil_img, None, pos, io, scene, worker=worker)
     io._close_connection()
 
     if worker:
