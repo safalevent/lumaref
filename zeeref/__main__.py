@@ -38,7 +38,7 @@ from zeeref.fileio.scratch import delete_scratch_file
 from zeeref.utils import create_palette_from_dict
 from zeeref.view import ZeeGraphicsView
 
-logger = logging.getLogger("zeeref.__main__")
+logger = logging.getLogger(__name__)
 
 
 class ZeeRefApplication(QtWidgets.QApplication):
