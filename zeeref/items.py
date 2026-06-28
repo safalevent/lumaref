@@ -1836,6 +1836,24 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
         max_x = float("-inf")
         max_y = float("-inf")
         max_r = 0.0
+        
+        for stroke in self.strokes:
+            base_size = stroke.get("base_size", 10)
+            for pt in stroke.get("points", []):
+                r = base_size * pt.get("pressure", 1.0) / 2
+                if r > max_r:
+                    max_r = r
+                x = pt["x"]
+                y = pt["y"]
+                if x < min_x: min_x = x
+                if x > max_x: max_x = x
+                if y < min_y: min_y = y
+                if y > max_y: max_y = y
+                
+        if max_x < min_x:
+            self._cached_rect = QtCore.QRectF(0, 0, 1, 1)
+            return
+            
         pad = max_r + 1
         self._cached_rect = QtCore.QRectF(
             min_x - pad, min_y - pad, (max_x - min_x) + 2 * pad, (max_y - min_y) + 2 * pad
@@ -1931,6 +1949,10 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
             if pt["y"] < min_y: min_y = pt["y"]
             if pt["y"] > max_y: max_y = pt["y"]
         pad = max_r + 1
+        if max_x < min_x:
+            stroke["cache_picture"] = QtGui.QPicture()
+            return
+            
         rect = QtCore.QRectF(min_x - pad, min_y - pad, max_x - min_x + 2*pad, max_y - min_y + 2*pad)
         
         import math
