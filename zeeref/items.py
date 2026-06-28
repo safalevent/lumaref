@@ -1592,10 +1592,21 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
         self.setZValue(1e9)
         logger.debug(f"Initialized {self}")
 
+    def _get_dynamic_padding(self, base_size: float) -> float:
+        pad = 1000.0
+        scene = self.scene()
+        if scene:
+            views = scene.views()
+            if views:
+                zoom = views[0].transform().m11()
+                if zoom > 0:
+                    pad = 500.0 / zoom
+        return max(pad, base_size * 50.0)
+
     def start_temp_stroke(self, stroke: dict[str, Any]) -> None:
         self.temp_stroke = stroke
-        self._temp_points_rendered = 0
-        self._temp_pixmap: QtGui.QPixmap | None = None
+        self.temp_stroke["chunked_count"] = 0
+        self.temp_stroke["chunks"] = []
         
         min_x = float("inf")
         min_y = float("inf")
@@ -1613,10 +1624,13 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
         if max_x >= min_x:
             pad = max_r + 1
             self._temp_rect = QtCore.QRectF(min_x - pad, min_y - pad, (max_x - min_x) + 2*pad, (max_y - min_y) + 2*pad)
+            dyn_pad = self._get_dynamic_padding(base_size)
+            self._temp_rect_capacity = self._temp_rect.adjusted(-dyn_pad, -dyn_pad, dyn_pad, dyn_pad)
         else:
             self._temp_rect = QtCore.QRectF()
+            self._temp_rect_capacity = QtCore.QRectF()
             
-        if not self._cached_rect.contains(self._temp_rect):
+        if not self._cached_rect.contains(self._temp_rect_capacity):
             self.prepareGeometryChange()
             
         self.update(self._temp_rect)
@@ -1639,64 +1653,43 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
             else:
                 update_rect = pt_rect
 
-            if not self._cached_rect.contains(pt_rect) and not self._temp_rect.contains(pt_rect):
-                self.prepareGeometryChange()
-            
-            new_temp_rect = self._temp_rect.united(pt_rect)
-            
-            # Incremental rendering to _temp_pixmap
-            if new_temp_rect != self._temp_rect or self._temp_pixmap is None:
-                import math
-                w = max(1, int(math.ceil(new_temp_rect.width())))
-                h = max(1, int(math.ceil(new_temp_rect.height())))
-                new_pix = QtGui.QPixmap(w, h)
-                new_pix.fill(QtGui.QColor(0, 0, 0, 0))
-                p = QtGui.QPainter(new_pix)
-                if getattr(self, "_temp_pixmap", None) is not None:
-                    offset_x = self._temp_rect.x() - new_temp_rect.x()
-                    offset_y = self._temp_rect.y() - new_temp_rect.y()
-                    p.drawPixmap(QtCore.QPointF(offset_x, offset_y), self._temp_pixmap)
-                
-                # Draw the unrendered segment
-                p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-                p.translate(-new_temp_rect.x(), -new_temp_rect.y())
-                
-                points.append({"x": x, "y": y, "pressure": pressure})
-                start_idx = max(0, self._temp_points_rendered - 1)
-                chunk_stroke = {
-                    "color": self.temp_stroke.get("color"),
-                    "base_size": self.temp_stroke.get("base_size"),
-                    "points": points[start_idx:]
-                }
-                self._paint_stroke(p, chunk_stroke)
-                p.end()
-                
-                self._temp_pixmap = new_pix
-                self._temp_rect = new_temp_rect
-                self._temp_points_rendered = len(points)
-            else:
-                points.append({"x": x, "y": y, "pressure": pressure})
-                p = QtGui.QPainter(self._temp_pixmap)
-                p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-                p.translate(-self._temp_rect.x(), -self._temp_rect.y())
-                start_idx = max(0, self._temp_points_rendered - 1)
-                chunk_stroke = {
-                    "color": self.temp_stroke.get("color"),
-                    "base_size": self.temp_stroke.get("base_size"),
-                    "points": points[start_idx:]
-                }
-                self._paint_stroke(p, chunk_stroke)
-                p.end()
-                self._temp_points_rendered = len(points)
+            self._temp_rect = self._temp_rect.united(pt_rect)
 
+            if not self._cached_rect.contains(pt_rect) and not getattr(self, "_temp_rect_capacity", QtCore.QRectF()).contains(pt_rect):
+                self.prepareGeometryChange()
+                dyn_pad = self._get_dynamic_padding(base_size)
+                self._temp_rect_capacity = self._temp_rect.adjusted(-dyn_pad, -dyn_pad, dyn_pad, dyn_pad)
+            
+            points.append({"x": x, "y": y, "pressure": pressure})
+            
+            chunked_count = self.temp_stroke.get("chunked_count", 0)
+            if len(points) - chunked_count >= 500:
+                end_idx = len(points) - 1
+                chunk_points = points[chunked_count:end_idx + 1]
+                
+                pic = QtGui.QPicture()
+                p = QtGui.QPainter(pic)
+                p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+                chunk_stroke = {
+                    "color": self.temp_stroke.get("color"),
+                    "base_size": self.temp_stroke.get("base_size"),
+                    "points": chunk_points
+                }
+                self._paint_stroke(p, chunk_stroke, skip_first_point=(chunked_count > 0))
+                p.end()
+                
+                if "chunks" not in self.temp_stroke:
+                    self.temp_stroke["chunks"] = []
+                self.temp_stroke["chunks"].append(pic)
+                self.temp_stroke["chunked_count"] = end_idx
+                
             self.update(update_rect)
 
     def clear_temp_stroke(self) -> None:
         rect_to_update = getattr(self, "_temp_rect", QtCore.QRectF())
         self.temp_stroke = None
-        self._temp_pixmap = None
-        self._temp_points_rendered = 0
         self._temp_rect = QtCore.QRectF()
+        self._temp_rect_capacity = QtCore.QRectF()
         if not self._cached_rect.contains(rect_to_update):
             self.prepareGeometryChange()
         self.update(rect_to_update)
@@ -1772,8 +1765,8 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
 
     def bounding_rect_unselected(self) -> QtCore.QRectF:
         rect = QtCore.QRectF(self._cached_rect)
-        if self.temp_stroke and hasattr(self, "_temp_rect"):
-            rect = rect.united(self._temp_rect)
+        if self.temp_stroke and hasattr(self, "_temp_rect_capacity"):
+            rect = rect.united(self._temp_rect_capacity)
         return rect
 
     def add_stroke(self, stroke: dict[str, Any]) -> None:
@@ -1848,7 +1841,7 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
             min_x - pad, min_y - pad, (max_x - min_x) + 2 * pad, (max_y - min_y) + 2 * pad
         )
 
-    def _paint_stroke(self, painter: QtGui.QPainter, stroke: dict[str, Any]) -> None:
+    def _paint_stroke(self, painter: QtGui.QPainter, stroke: dict[str, Any], skip_first_point: bool = False) -> None:
         color_data = stroke.get("color", [0, 0, 0, 255])
         color = QtGui.QColor(*color_data)
         base_size = stroke.get("base_size", 10)
@@ -1856,25 +1849,69 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QtGui.QBrush(color))
 
+        clip_rect = painter.clipBoundingRect()
+        if clip_rect.isNull() or clip_rect.isEmpty():
+            cx1 = float("-inf")
+            cy1 = float("-inf")
+            cx2 = float("inf")
+            cy2 = float("inf")
+        else:
+            cx1 = clip_rect.x()
+            cy1 = clip_rect.y()
+            cx2 = cx1 + clip_rect.width()
+            cy2 = cy1 + clip_rect.height()
+            
+        pad = base_size
+
+        path = QtGui.QPainterPath()
+        path.setFillRule(QtCore.Qt.FillRule.WindingFill)
+
         for i, pt in enumerate(points):
             pressure = pt.get("pressure", 1.0)
             radius = base_size * pressure / 2
-            painter.drawEllipse(QtCore.QPointF(pt["x"], pt["y"]), radius, radius)
+            x = pt["x"]
+            y = pt["y"]
+            
             if i > 0:
                 prev = points[i - 1]
-                dx = pt["x"] - prev["x"]
-                dy = pt["y"] - prev["y"]
+                px = prev["x"]
+                py = prev["y"]
+                
+                min_x = x if x < px else px
+                max_x = x if x > px else px
+                min_y = y if y < py else py
+                max_y = y if y > py else py
+                
+                if max_x + pad < cx1 or min_x - pad > cx2 or \
+                   max_y + pad < cy1 or min_y - pad > cy2:
+                    continue
+                
+                path.addEllipse(QtCore.QPointF(x, y), radius, radius)
+                dx = x - px
+                dy = y - py
                 dist = math.hypot(dx, dy)
                 if dist > 1:
-                    steps = int(dist)
-                    for s in range(1, steps):
-                        t = s / dist
-                        ix = prev["x"] + dx * t
-                        iy = prev["y"] + dy * t
-                        prev_p = prev.get("pressure", 1.0)
-                        ip = prev_p + (pressure - prev_p) * t
-                        ir = base_size * ip / 2
-                        painter.drawEllipse(QtCore.QPointF(ix, iy), ir, ir)
+                    prev_p = prev.get("pressure", 1.0)
+                    r0 = base_size * prev_p / 2
+                    r1 = radius
+                    
+                    nx = -dy / dist
+                    ny = dx / dist
+                    
+                    poly = QtGui.QPolygonF([
+                        QtCore.QPointF(px + nx * r0, py + ny * r0),
+                        QtCore.QPointF(px - nx * r0, py - ny * r0),
+                        QtCore.QPointF(x - nx * r1, y - ny * r1),
+                        QtCore.QPointF(x + nx * r1, y + ny * r1),
+                    ])
+                    path.addPolygon(poly)
+            else:
+                if not skip_first_point:
+                    if x + pad >= cx1 and x - pad <= cx2 and y + pad >= cy1 and y - pad <= cy2:
+                        path.addEllipse(QtCore.QPointF(x, y), radius, radius)
+
+        if not path.isEmpty():
+            painter.drawPath(path)
 
     def _ensure_stroke_cache(self, stroke: dict[str, Any]) -> None:
         if "cache_pixmap" in stroke or "cache_picture" in stroke:
@@ -1932,8 +1969,25 @@ class ZeePathItem(ZeeItemMixin, QtWidgets.QGraphicsItem):
 
         if self.temp_stroke:
             painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-            if getattr(self, "_temp_pixmap", None) is not None:
-                painter.drawPixmap(self._temp_rect.topLeft(), self._temp_pixmap)
+            
+            clip_rect = painter.clipBoundingRect()
+            if clip_rect.isNull() or clip_rect.isEmpty():
+                for pic in self.temp_stroke.get("chunks", []):
+                    painter.drawPicture(0, 0, pic)
+            else:
+                clip_rect_int = clip_rect.toRect()
+                for pic in self.temp_stroke.get("chunks", []):
+                    if clip_rect_int.intersects(pic.boundingRect()):
+                        painter.drawPicture(0, 0, pic)
+            
+            chunked_count = self.temp_stroke.get("chunked_count", 0)
+            if chunked_count < len(self.temp_stroke.get("points", [])):
+                tail_stroke = {
+                    "color": self.temp_stroke.get("color"),
+                    "base_size": self.temp_stroke.get("base_size"),
+                    "points": self.temp_stroke.get("points", [])[chunked_count:]
+                }
+                self._paint_stroke(painter, tail_stroke, skip_first_point=(chunked_count > 0))
 
         self.paint_selectable(painter, option, widget)
 
