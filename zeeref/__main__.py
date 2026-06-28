@@ -38,7 +38,7 @@ from zeeref.fileio.scratch import delete_scratch_file
 from zeeref.utils import create_palette_from_dict
 from zeeref.view import ZeeGraphicsView
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("zeeref.__main__")
 
 
 class ZeeRefApplication(QtWidgets.QApplication):
@@ -68,13 +68,46 @@ class ZeeRefMainWindow(QtWidgets.QMainWindow):
         self.setAttribute(Qt.WidgetAttribute.WA_Hover)
         self._resize_edges = Qt.Edge(0)
         self.view = ZeeGraphicsView(app, self)
-        default_window_size = QtCore.QSize(500, 300)
+        # Determine target screen where cursor is located
+        screen = QtGui.QGuiApplication.screenAt(QtGui.QCursor.pos())
+        if not screen:
+            screen = QtGui.QGuiApplication.primaryScreen()
+
         geom = self.view.settings.value("MainWindow/geometry")
-        if geom is None:
-            self.resize(default_window_size)
-        else:
-            if not self.restoreGeometry(geom):
-                self.resize(default_window_size)
+        restored = False
+        if geom is not None:
+            restored = self.restoreGeometry(geom)
+            if restored and screen:
+                # If restored to a different screen than the cursor, shift by screen offset
+                window_geom = self.geometry()
+                if not screen.geometry().contains(window_geom.center()):
+                    current_screen = None
+                    for s in QtGui.QGuiApplication.screens():
+                        if s.geometry().contains(window_geom.center()):
+                            current_screen = s
+                            break
+                    if not current_screen:
+                        current_screen = QtGui.QGuiApplication.primaryScreen()
+                    
+                    if current_screen and current_screen != screen:
+                        offset_x = screen.geometry().x() - current_screen.geometry().x()
+                        offset_y = screen.geometry().y() - current_screen.geometry().y()
+                        self.move(self.x() + offset_x, self.y() + offset_y)
+            
+        if not restored:
+            if screen:
+                screen_geom = screen.availableGeometry()
+                w = int(screen_geom.width() * 0.77)
+                h = int(screen_geom.height() * 0.77)
+                w = max(500, min(w, screen_geom.width()))
+                h = max(300, min(h, screen_geom.height()))
+                self.resize(w, h)
+                
+                x = screen_geom.x() + (screen_geom.width() - w) // 2
+                y = screen_geom.y() + (screen_geom.height() - h) // 2
+                self.move(x, y)
+            else:
+                self.resize(500, 300)
         self.setCentralWidget(self.view)
         
         from zeeref.utils import set_dark_titlebar
