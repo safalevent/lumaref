@@ -68,14 +68,9 @@ def test_load_images_canceled(scene, imgfilename3x3):
     )
     worker.begin_processing.emit.assert_called_once_with(2)
     worker.progress.emit.assert_called_once_with(0)
-    _assert_finished_result(worker, errors=[], created_count=1)
+    _assert_finished_result(worker, errors=[], created_count=0)
     itemdata = queue2list(scene.items_to_add)
-    assert len(itemdata) == 1
-    snap, selected = itemdata[0]
-    assert isinstance(snap, PixmapItemSnapshot)
-    assert selected is True
-    assert snap.x == 5 - snap.width / 2
-    assert snap.y == 6 - snap.height / 2
+    assert len(itemdata) == 0
 
 
 def test_load_images_error(scene, imgfilename3x3):

@@ -1696,6 +1696,11 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
         assert event is not None
 
         if self.active_mode == self.DRAW_MODE:
+            if event.button() == Qt.MouseButton.RightButton:
+                self.exit_draw_mode(commit=True)
+                event.accept()
+                return
+
             action, inverted = self.keyboard_settings.mouse_action_for_event(event)
             if action == "zoom":
                 self.active_mode = self.ZOOM_MODE
@@ -1719,8 +1724,6 @@ class ZeeGraphicsView(MainControlsMixin, QtWidgets.QGraphicsView, ActionsMixin):
                     "points": [{"x": pos.x(), "y": pos.y(), "pressure": pressure}],
                 }
                 self.draw_item.start_temp_stroke(self.draw_current_stroke)
-            elif event.button() == Qt.MouseButton.RightButton:
-                self.exit_draw_mode(commit=True)
             event.accept()
             return
 
